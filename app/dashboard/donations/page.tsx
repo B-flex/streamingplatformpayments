@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Search, Filter, TrendingUp, Wallet } from "lucide-react"
+import { authRequest } from "@/lib/auth-client"
 
 type StatusFilter = "all" | "completed" | "pending" | "failed"
 
@@ -27,9 +28,9 @@ export default function DonationsPage() {
     const fetchDonations = async () => {
       setIsLoading(true)
       try {
-        const response = await fetch("http://localhost:5000/donations")
+        const response = await authRequest("/donations")
         const data = await response.json()
-        const formatted = data.map((d: any) => ({
+        const formatted = (Array.isArray(data) ? data : []).map((d: any) => ({
           id: d._id,
           donorName: d.senderName || d.sender || "Anonymous",
           amount: Number(d.amount) || 0,

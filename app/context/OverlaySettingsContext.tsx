@@ -11,12 +11,11 @@ import {
 } from "react"
 import {
   defaultOverlaySettingsMap,
-  OVERLAY_SETTINGS_STORAGE_KEY,
-  readStoredOverlaySettings,
-  writeStoredOverlaySettings,
+  sanitizeOverlaySettings,
   type OverlaySettingId,
   type OverlaySettings,
 } from "@/lib/overlay-settings"
+import { useAuth } from "@/app/context/AuthContext"
 
 type OverlaySettingsContextValue = {
   settings: OverlaySettings
@@ -26,24 +25,38 @@ type OverlaySettingsContextValue = {
 const OverlaySettingsContext = createContext<OverlaySettingsContextValue | null>(null)
 
 export function OverlaySettingsProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth()
   const [settings, setSettings] = useState<OverlaySettings>(defaultOverlaySettingsMap)
+  const storageKey = user ? `streamtip.overlay.settings.${user.id}` : "streamtip.overlay.settings.guest"
 
   useEffect(() => {
-    setSettings(readStoredOverlaySettings())
-  }, [])
+    if (typeof window === "undefined") return
+
+    try {
+      const raw = window.localStorage.getItem(storageKey)
+      setSettings(raw ? sanitizeOverlaySettings(JSON.parse(raw)) : defaultOverlaySettingsMap)
+    } catch {
+      setSettings(defaultOverlaySettingsMap)
+    }
+  }, [storageKey])
 
   useEffect(() => {
     const syncFromStorage = (event: StorageEvent) => {
-      if (event.key && event.key !== OVERLAY_SETTINGS_STORAGE_KEY) {
+      if (event.key && event.key !== storageKey) {
         return
       }
 
-      setSettings(readStoredOverlaySettings())
+      try {
+        const raw = window.localStorage.getItem(storageKey)
+        setSettings(raw ? sanitizeOverlaySettings(JSON.parse(raw)) : defaultOverlaySettingsMap)
+      } catch {
+        setSettings(defaultOverlaySettingsMap)
+      }
     }
 
     window.addEventListener("storage", syncFromStorage)
     return () => window.removeEventListener("storage", syncFromStorage)
-  }, [])
+  }, [storageKey])
 
   const updateSetting = useCallback(
     async (id: OverlaySettingId, enabled: boolean) => {
@@ -71,10 +84,12 @@ export function OverlaySettingsProvider({ children }: { children: ReactNode }) {
       }
 
       setSettings(nextSettings)
-      writeStoredOverlaySettings(nextSettings)
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(storageKey, JSON.stringify(nextSettings))
+      }
       return nextEnabled
     },
-    [settings],
+    [settings, storageKey],
   )
 
   const value = useMemo(

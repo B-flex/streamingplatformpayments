@@ -16,6 +16,7 @@ export interface AppUser {
   email: string
   role?: "creator" | "admin"
   status?: "active" | "suspended" | "banned"
+  profileImage?: string
   virtualAccount: VirtualAccount | null
   createdAt?: string
 }

@@ -10,13 +10,12 @@ import {
   type ReactNode,
 } from "react"
 import {
-  APP_PREFERENCES_STORAGE_KEY,
   defaultAppPreferences,
-  readStoredAppPreferences,
-  writeStoredAppPreferences,
+  sanitizeAppPreferences,
   type AppPreferences,
-  type NotificationSoundProfile,
+  type NotificationSoundId,
 } from "@/lib/app-preferences"
+import { useAuth } from "@/app/context/AuthContext"
 import { requestDesktopNotificationPermission, unlockNotificationAudio } from "@/lib/notification-runtime"
 
 type AppPreferencesContextValue = {
@@ -30,24 +29,38 @@ type AppPreferencesContextValue = {
 const AppPreferencesContext = createContext<AppPreferencesContextValue | null>(null)
 
 export function AppPreferencesProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth()
   const [preferences, setPreferences] = useState<AppPreferences>(defaultAppPreferences)
+  const storageKey = user ? `streamtip.app.preferences.${user.id}` : "streamtip.app.preferences.guest"
 
   useEffect(() => {
-    setPreferences(readStoredAppPreferences())
-  }, [])
+    if (typeof window === "undefined") return
+
+    try {
+      const raw = window.localStorage.getItem(storageKey)
+      setPreferences(raw ? sanitizeAppPreferences(JSON.parse(raw)) : defaultAppPreferences)
+    } catch {
+      setPreferences(defaultAppPreferences)
+    }
+  }, [storageKey])
 
   useEffect(() => {
     const syncFromStorage = (event: StorageEvent) => {
-      if (event.key && event.key !== APP_PREFERENCES_STORAGE_KEY) {
+      if (event.key && event.key !== storageKey) {
         return
       }
 
-      setPreferences(readStoredAppPreferences())
+      try {
+        const raw = window.localStorage.getItem(storageKey)
+        setPreferences(raw ? sanitizeAppPreferences(JSON.parse(raw)) : defaultAppPreferences)
+      } catch {
+        setPreferences(defaultAppPreferences)
+      }
     }
 
     window.addEventListener("storage", syncFromStorage)
     return () => window.removeEventListener("storage", syncFromStorage)
-  }, [])
+  }, [storageKey])
 
   useEffect(() => {
     const unlock = () => {
@@ -76,8 +89,8 @@ export function AppPreferencesProvider({ children }: { children: ReactNode }) {
         await unlockNotificationAudio()
       }
 
-      if (key === "soundProfile") {
-        nextValue = (value as NotificationSoundProfile) as AppPreferences[K]
+      if (key === "desktopSound" || key === "donationSound" || key === "payoutSound") {
+        nextValue = (value as NotificationSoundId) as AppPreferences[K]
       }
 
       const nextPreferences = {
@@ -86,10 +99,12 @@ export function AppPreferencesProvider({ children }: { children: ReactNode }) {
       }
 
       setPreferences(nextPreferences)
-      writeStoredAppPreferences(nextPreferences)
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(storageKey, JSON.stringify(nextPreferences))
+      }
       return nextPreferences
     },
-    [preferences],
+    [preferences, storageKey],
   )
 
   const value = useMemo(

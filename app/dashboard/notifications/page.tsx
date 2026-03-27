@@ -10,6 +10,13 @@ import {
   Wallet,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
 import { useAppPreferences } from "@/app/context/AppPreferencesContext"
@@ -18,6 +25,7 @@ import {
   playNotificationSound,
   requestDesktopNotificationPermission,
 } from "@/lib/notification-runtime"
+import { notificationSoundOptions, type NotificationSoundId } from "@/lib/app-preferences"
 
 export default function NotificationsPage() {
   const { preferences, updatePreference } = useAppPreferences()
@@ -58,8 +66,8 @@ export default function NotificationsPage() {
         icon: Wallet,
       },
       {
-        label: "Sound profile",
-        value: preferences.notificationSounds ? preferences.soundProfile : "Muted",
+        label: "Notification sounds",
+        value: preferences.notificationSounds ? "Custom mix" : "Muted",
         icon: Volume2,
       },
     ],
@@ -123,27 +131,8 @@ export default function NotificationsPage() {
     setStatusMessage("Sent a payout test using your current notification settings.")
   }
 
-  const handlePreviewSound = async (eventType: "donation" | "payout") => {
-    await playNotificationSound(eventType, preferences.soundProfile)
-    setStatusMessage(
-      eventType === "donation"
-        ? "Played the donation sound preview."
-        : "Played the payout sound preview.",
-    )
-  }
-
-  const soundProfiles = [
-    {
-      id: "soft" as const,
-      label: "Soft",
-      description: "Gentle chime for calm creator dashboards and softer overlays.",
-    },
-    {
-      id: "bright" as const,
-      label: "Bright",
-      description: "Sharper tone that stays audible while you are multitasking live.",
-    },
-  ]
+  const toneSounds = notificationSoundOptions.filter((option) => option.category === "Tone")
+  const applauseSounds = notificationSoundOptions.filter((option) => option.category === "Applause")
 
   const notificationToggles = [
     {
@@ -183,10 +172,7 @@ export default function NotificationsPage() {
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         {summaryCards.map(({ label, value, icon: Icon }) => (
-          <div
-            key={label}
-            className="rounded-2xl border border-zinc-800 bg-zinc-900/80 p-4"
-          >
+          <div key={label} className="rounded-2xl border border-zinc-800 bg-zinc-900/80 p-4">
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm text-zinc-500">{label}</p>
               <div className="rounded-lg bg-zinc-800 p-2">
@@ -198,14 +184,14 @@ export default function NotificationsPage() {
         ))}
       </div>
 
-      {statusMessage && (
+      {statusMessage ? (
         <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-200">
           <div className="flex items-start gap-3">
             <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-400" />
             <span>{statusMessage}</span>
           </div>
         </div>
-      )}
+      ) : null}
 
       <section className="rounded-2xl border border-zinc-800 bg-zinc-900/80 overflow-hidden">
         <div className="border-b border-zinc-800 px-6 py-4">
@@ -230,18 +216,8 @@ export default function NotificationsPage() {
                 )}
               >
                 <div className="flex items-center gap-4">
-                  <div
-                    className={cn(
-                      "rounded-xl p-2.5",
-                      enabled ? "bg-purple-500/20" : "bg-zinc-800",
-                    )}
-                  >
-                    <Icon
-                      className={cn(
-                        "h-5 w-5",
-                        enabled ? "text-purple-300" : "text-zinc-500",
-                      )}
-                    />
+                  <div className={cn("rounded-xl p-2.5", enabled ? "bg-purple-500/20" : "bg-zinc-800")}>
+                    <Icon className={cn("h-5 w-5", enabled ? "text-purple-300" : "text-zinc-500")} />
                   </div>
                   <div>
                     <p className={cn("font-medium", enabled ? "text-white" : "text-zinc-300")}>
@@ -268,63 +244,75 @@ export default function NotificationsPage() {
           <div className="border-b border-zinc-800 px-6 py-4">
             <h2 className="text-lg font-semibold text-white">Sound Design</h2>
             <p className="mt-1 text-sm text-zinc-500">
-              Choose the tone profile and preview each event before you go live.
+              Choose from 20 tonal sounds and 5 louder applause reactions for each type of alert.
             </p>
           </div>
 
-          <div className="grid gap-3 p-6">
-            {soundProfiles.map((profile) => {
-              const active = preferences.soundProfile === profile.id
+          <div className="grid gap-4 p-6">
+            <SoundSelectCard
+              title="Donation alert sound"
+              description="Pick the sound that should fire when a donation arrives."
+              value={preferences.donationSound}
+              options={notificationSoundOptions}
+              onChange={(value) => {
+                void updatePreference("donationSound", value)
+                setStatusMessage("Donation alert sound updated.")
+              }}
+              onPreview={() => {
+                void playNotificationSound(preferences.donationSound)
+                setStatusMessage("Played the donation sound preview.")
+              }}
+            />
 
-              return (
-                <button
-                  key={profile.id}
-                  type="button"
-                  onClick={() => {
-                    void updatePreference("soundProfile", profile.id)
-                    setStatusMessage(`Switched notification sounds to the ${profile.label} profile.`)
-                  }}
-                  className={cn(
-                    "rounded-2xl border p-5 text-left transition-all",
-                    active
-                      ? "border-purple-500/40 bg-purple-500/10 shadow-[0_0_30px_rgba(168,85,247,0.12)]"
-                      : "border-zinc-800 bg-zinc-950/60 hover:border-zinc-700",
-                  )}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className={cn("font-semibold", active ? "text-white" : "text-zinc-300")}>
-                        {profile.label}
-                      </p>
-                      <p className="mt-1 text-sm text-zinc-500">{profile.description}</p>
-                    </div>
-                    {active ? <CheckCircle2 className="h-5 w-5 text-purple-400" /> : null}
+            <SoundSelectCard
+              title="Payout alert sound"
+              description="Use a different sound for payout completion and payout updates."
+              value={preferences.payoutSound}
+              options={notificationSoundOptions}
+              onChange={(value) => {
+                void updatePreference("payoutSound", value)
+                setStatusMessage("Payout alert sound updated.")
+              }}
+              onPreview={() => {
+                void playNotificationSound(preferences.payoutSound)
+                setStatusMessage("Played the payout sound preview.")
+              }}
+            />
+
+            <SoundSelectCard
+              title="Desktop notification sound"
+              description="Set the sound you want tied to your browser-style notification feel."
+              value={preferences.desktopSound}
+              options={notificationSoundOptions}
+              onChange={(value) => {
+                void updatePreference("desktopSound", value)
+                setStatusMessage("Desktop notification sound updated.")
+              }}
+              onPreview={() => {
+                void playNotificationSound(preferences.desktopSound)
+                setStatusMessage("Played the desktop notification sound preview.")
+              }}
+            />
+
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-5">
+              <p className="font-semibold text-white">Library Overview</p>
+              <p className="mt-1 text-sm text-zinc-500">
+                Tonal sounds first, then the louder applause reactions.
+              </p>
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                {toneSounds.map((sound) => (
+                  <div key={sound.id} className="rounded-xl border border-zinc-800 bg-zinc-900/70 px-3 py-2 text-sm text-zinc-300">
+                    {sound.label}
                   </div>
-                </button>
-              )
-            })}
-
-            <div className="grid gap-3 pt-2 sm:grid-cols-2">
-              <Button
-                onClick={() => {
-                  void handlePreviewSound("donation")
-                }}
-                variant="outline"
-                className="justify-between border-zinc-700 bg-zinc-950 text-white hover:bg-zinc-900"
-              >
-                Preview Donation Sound
-                <Sparkles className="h-4 w-4" />
-              </Button>
-              <Button
-                onClick={() => {
-                  void handlePreviewSound("payout")
-                }}
-                variant="outline"
-                className="justify-between border-zinc-700 bg-zinc-950 text-white hover:bg-zinc-900"
-              >
-                Preview Payout Sound
-                <Wallet className="h-4 w-4" />
-              </Button>
+                ))}
+              </div>
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                {applauseSounds.map((sound) => (
+                  <div key={sound.id} className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+                    {sound.label}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -380,6 +368,60 @@ export default function NotificationsPage() {
           </div>
         </div>
       </section>
+    </div>
+  )
+}
+
+function SoundSelectCard({
+  title,
+  description,
+  value,
+  options,
+  onChange,
+  onPreview,
+}: {
+  title: string
+  description: string
+  value: NotificationSoundId
+  options: typeof notificationSoundOptions
+  onChange: (value: NotificationSoundId) => void
+  onPreview: () => void
+}) {
+  return (
+    <div className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-5">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="font-semibold text-white">{title}</p>
+          <p className="mt-1 text-sm text-zinc-500">{description}</p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onPreview}
+          className="border-zinc-700 bg-zinc-950 text-white hover:bg-zinc-900"
+        >
+          Preview
+        </Button>
+      </div>
+
+      <div className="mt-4">
+        <Select value={value} onValueChange={(nextValue) => onChange(nextValue as NotificationSoundId)}>
+          <SelectTrigger className="border-zinc-700 bg-zinc-900 text-white">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="border-zinc-800 bg-zinc-900">
+            {options.map((option) => (
+              <SelectItem
+                key={option.id}
+                value={option.id}
+                className="text-white focus:bg-zinc-800 focus:text-white"
+              >
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
     </div>
   )
 }

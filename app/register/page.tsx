@@ -3,18 +3,21 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
-import { ArrowRight, CheckCircle2, Lock, Mail, Sparkles, User, XCircle } from "lucide-react"
+import { ArrowRight, CheckCircle2, Eye, EyeOff, Lock, Mail, Sparkles, User, XCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { SocialAuthButtons } from "@/components/auth/social-auth-buttons"
 import { useAuth } from "@/app/context/AuthContext"
 
 export default function RegisterPage() {
   const router = useRouter()
-  const { register, isAuthenticated, isLoading } = useAuth()
+  const { register, socialLogin, isAuthenticated, isLoading } = useAuth()
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
@@ -45,16 +48,21 @@ export default function RegisterPage() {
     setError("")
 
     try {
-      await register({
+      const result = await register({
         name: name.trim(),
         email: email.trim(),
         password,
       })
 
-      setSuccess("Account created successfully. Redirecting to your dashboard...")
+      setSuccess(
+        result.warning ||
+          (result.user.virtualAccount?.status === "pending"
+            ? "Account created successfully. Your virtual account is still being provisioned, so you can enter the dashboard while it finishes."
+            : "Account created successfully. Redirecting to your dashboard..."),
+      )
       window.setTimeout(() => {
         router.push("/dashboard")
-      }, 900)
+      }, 1200)
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -103,6 +111,27 @@ export default function RegisterPage() {
           </div>
 
           <div className="mt-8 space-y-5">
+            <SocialAuthButtons
+              disabled={loading}
+              onGoogleCredential={async (credential) => {
+                await socialLogin("google", { credential })
+                router.push("/dashboard")
+              }}
+              onAppleToken={async (identityToken) => {
+                await socialLogin("apple", { identityToken })
+                router.push("/dashboard")
+              }}
+            />
+
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-zinc-800" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase tracking-[0.24em]">
+                <span className="bg-zinc-950 px-3 text-zinc-500">or create with email</span>
+              </div>
+            </div>
+
             <div className="space-y-2">
               <label className="text-sm font-medium text-zinc-300">Full name</label>
               <div className="relative">
@@ -135,12 +164,20 @@ export default function RegisterPage() {
                 <div className="relative">
                   <Lock className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
                   <Input
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     placeholder="Minimum 8 characters"
-                    className="h-12 border-zinc-800 bg-zinc-900 pl-11 text-white placeholder:text-zinc-600"
+                    className="h-12 border-zinc-800 bg-zinc-900 pl-11 pr-11 text-white placeholder:text-zinc-600"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((current) => !current)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
                 </div>
               </div>
 
@@ -149,12 +186,20 @@ export default function RegisterPage() {
                 <div className="relative">
                   <Lock className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
                   <Input
-                    type="password"
+                    type={showConfirmPassword ? "text" : "password"}
                     value={confirmPassword}
                     onChange={(event) => setConfirmPassword(event.target.value)}
                     placeholder="Repeat password"
-                    className="h-12 border-zinc-800 bg-zinc-900 pl-11 text-white placeholder:text-zinc-600"
+                    className="h-12 border-zinc-800 bg-zinc-900 pl-11 pr-11 text-white placeholder:text-zinc-600"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword((current) => !current)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"
+                    aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
+                  >
+                    {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
                 </div>
               </div>
             </div>

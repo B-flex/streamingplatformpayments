@@ -2,11 +2,14 @@
 
 import { createContext, useContext, useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from "react"
 import { io } from "socket.io-client"
+import { useAuth } from "@/app/context/AuthContext"
 import { readStoredAppPreferences } from "@/lib/app-preferences"
+import { authRequest, getStoredSessionToken } from "@/lib/auth-client"
 import { emitNotificationFeedback } from "@/lib/notification-runtime"
 
 type Donation = {
   _id: string
+  creatorId?: string
   amount: number | string
   sender?: string
   senderName?: string
@@ -29,6 +32,7 @@ const normalizeDonation = (donation: any): Donation => ({
 
 export const DonationsProvider = ({ children }: { children: ReactNode }) => {
   const [donations, setDonations] = useState<Donation[]>([])
+  const { user, isAuthenticated } = useAuth()
 
   const maybeShowDonationNotification = (donation: Donation) => {
     if (typeof window === "undefined") {
@@ -51,26 +55,37 @@ export const DonationsProvider = ({ children }: { children: ReactNode }) => {
   }
 
   useEffect(() => {
-    // fetch initial data
-    fetch("http://localhost:5000/donations")
-  .then(res => res.json())
-  .then(data => {
-    const fixed = data.map((d: any) => normalizeDonation(d))
-    setDonations(fixed)
-  })
+    if (!isAuthenticated || !user) {
+      setDonations([])
+      return
+    }
 
-    // socket connection
-    const socket = io("http://localhost:5000")
+    void authRequest("/donations")
+      .then((res) => res.json())
+      .then((data) => {
+        const fixed = Array.isArray(data) ? data.map((d: any) => normalizeDonation(d)) : []
+        setDonations(fixed)
+      })
+
+    const socket = io("http://localhost:5000", {
+      auth: {
+        sessionToken: getStoredSessionToken(),
+      },
+    })
 
     socket.on("newDonation", (data) => {
       const fixed = normalizeDonation(data)
+
+      if (fixed.creatorId && fixed.creatorId !== user.id) {
+        return
+      }
 
       setDonations(prev => [fixed, ...prev])
       maybeShowDonationNotification(fixed)
     })
 
     return () => {socket.disconnect()}
-  }, [])
+  }, [isAuthenticated, user])
 
   return (
     <DonationsContext.Provider value={{ donations, setDonations }}>

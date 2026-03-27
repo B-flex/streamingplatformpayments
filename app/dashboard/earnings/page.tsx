@@ -10,6 +10,7 @@ import {
   CalendarDays,
   CheckCircle2,
   Landmark,
+  LoaderCircle,
   ShieldCheck,
   TrendingUp,
   Wallet,
@@ -18,6 +19,7 @@ import {
 import { EarningsSummaryCard } from "@/components/dashboard/earnings-summary-card"
 import { EarningsChart } from "@/components/dashboard/earnings-chart"
 import { PayoutsTable, type Payout } from "@/components/dashboard/payouts-table"
+import { useAuth } from "@/app/context/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -27,7 +29,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { readStoredAppPreferences } from "@/lib/app-preferences"
+import { authRequest, getStoredSessionToken } from "@/lib/auth-client"
 import { emitNotificationFeedback } from "@/lib/notification-runtime"
 
 type Donation = {
@@ -50,6 +60,11 @@ type WithdrawResult =
       description: string
     }
   | null
+
+type BankOption = {
+  name: string
+  code: string
+}
 
 const MIN_WITHDRAWAL = 5000
 const PLATFORM_FEE_RATE = 0.2
@@ -89,35 +104,53 @@ function normalizeDate(value?: string) {
 }
 
 export default function EarningsPage() {
+  const { user, isAuthenticated } = useAuth()
   const [donations, setDonations] = useState<Donation[]>([])
   const [totalEarnings, setTotalEarnings] = useState(0)
   const [payouts, setPayouts] = useState<Payout[]>([])
   const [showWithdraw, setShowWithdraw] = useState(false)
   const [withdrawAmount, setWithdrawAmount] = useState("")
   const [bankName, setBankName] = useState("")
+  const [bankCode, setBankCode] = useState("")
   const [accountNumber, setAccountNumber] = useState("")
+  const [accountName, setAccountName] = useState("")
+  const [banks, setBanks] = useState<BankOption[]>([])
+  const [banksLoading, setBanksLoading] = useState(false)
+  const [resolvingAccountName, setResolvingAccountName] = useState(false)
   const [loading, setLoading] = useState(false)
   const [withdrawResult, setWithdrawResult] = useState<WithdrawResult>(null)
 
   useEffect(() => {
-    fetch("http://localhost:5000/donations")
+    if (!isAuthenticated) {
+      setDonations([])
+      setTotalEarnings(0)
+      return
+    }
+
+    void authRequest("/donations")
       .then((res) => res.json())
       .then((data) => {
-        setDonations(data)
+        const nextDonations = Array.isArray(data) ? data : []
+        setDonations(nextDonations)
 
-        const total = data.reduce((sum: number, donation: Donation) => {
+        const total = nextDonations.reduce((sum: number, donation: Donation) => {
           return sum + (Number(donation.amount) || 0)
         }, 0)
 
         setTotalEarnings(total)
       })
-  }, [])
+  }, [isAuthenticated])
 
   useEffect(() => {
-    fetch("http://localhost:5000/payouts")
+    if (!isAuthenticated) {
+      setPayouts([])
+      return
+    }
+
+    void authRequest("/payouts")
       .then((res) => res.json())
       .then((data) => {
-        const formatted = data.map((payout: any) => ({
+        const formatted = (Array.isArray(data) ? data : []).map((payout: any) => ({
           ...payout,
           _id: payout._id || payout.id,
           status: normalizePayoutStatus(payout.status),
@@ -127,12 +160,39 @@ export default function EarningsPage() {
 
         setPayouts(formatted)
       })
-  }, [])
+  }, [isAuthenticated])
 
   useEffect(() => {
-    const socket = io("http://localhost:5000")
+    if (!isAuthenticated) {
+      setBanks([])
+      return
+    }
+
+    setBanksLoading(true)
+    void authRequest("/banks")
+      .then((res) => res.json())
+      .then((payload) => {
+        setBanks(Array.isArray(payload?.banks) ? payload.banks : [])
+      })
+      .finally(() => setBanksLoading(false))
+  }, [isAuthenticated])
+
+  useEffect(() => {
+    if (!isAuthenticated || !user) {
+      return
+    }
+
+    const socket = io("http://localhost:5000", {
+      auth: {
+        sessionToken: getStoredSessionToken(),
+      },
+    })
 
     socket.on("newDonation", (data) => {
+      if (data.creatorId && data.creatorId !== user.id) {
+        return
+      }
+
       const amount = Number(data.amount) || 0
 
       setDonations((prev) => [data, ...prev])
@@ -140,6 +200,10 @@ export default function EarningsPage() {
     })
 
     socket.on("newPayout", (data) => {
+      if (data.creatorId && data.creatorId !== user.id) {
+        return
+      }
+
       const payout = {
         ...data,
         _id: data._id || data.id,
@@ -165,7 +229,7 @@ export default function EarningsPage() {
     return () => {
       socket.disconnect()
     }
-  }, [])
+  }, [isAuthenticated, user])
 
   const weeklyData = useMemo(() => {
     const grouped = donations.reduce((acc: { label: string; amount: number }[], donation) => {
@@ -241,12 +305,15 @@ export default function EarningsPage() {
     if (parsedWithdrawAmount < MIN_WITHDRAWAL) {
       return `Minimum withdrawal is ${formatCurrency(MIN_WITHDRAWAL)}.`
     }
-    if (!bankName.trim()) return "Add the destination bank."
+    if (!bankCode.trim() || !bankName.trim()) return "Select the destination bank."
     if (sanitizedAccountNumber.length !== 10) return "Account number must be 10 digits."
+    if (!accountName.trim()) return "Account name has not been resolved yet."
     if (parsedWithdrawAmount > availableBalance) return "This amount is above your available balance."
     return ""
   }, [
+    accountName,
     availableBalance,
+    bankCode,
     bankName,
     parsedWithdrawAmount,
     sanitizedAccountNumber.length,
@@ -258,7 +325,9 @@ export default function EarningsPage() {
   const resetWithdrawForm = () => {
     setWithdrawAmount("")
     setBankName("")
+    setBankCode("")
     setAccountNumber("")
+    setAccountName("")
     setLoading(false)
   }
 
@@ -274,13 +343,15 @@ export default function EarningsPage() {
     setWithdrawResult(null)
 
     try {
-      const response = await fetch("http://localhost:5000/payouts", {
+      const response = await authRequest("/payouts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           amount: parsedWithdrawAmount,
           bankName: bankName.trim(),
+          bankCode: bankCode.trim(),
           accountNumber: sanitizedAccountNumber,
+          accountName: accountName.trim(),
         }),
       })
 
@@ -297,6 +368,7 @@ export default function EarningsPage() {
           status: normalizePayoutStatus(data.status),
           bankName: bankName.trim(),
           accountNumber: sanitizedAccountNumber,
+          accountName: accountName.trim(),
           createdAt: new Date(data.createdAt || Date.now()),
           completedAt: data.completedAt ? new Date(data.completedAt) : undefined,
         }),
@@ -331,6 +403,51 @@ export default function EarningsPage() {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    const shouldResolve = Boolean(isAuthenticated && bankCode && sanitizedAccountNumber.length === 10)
+
+    if (!shouldResolve) {
+      return
+    }
+
+    const controller = new AbortController()
+    const timer = window.setTimeout(async () => {
+      setResolvingAccountName(true)
+
+      try {
+        const response = await authRequest("/bank-account-name-enquiry", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            bankCode,
+            accountNumber: sanitizedAccountNumber,
+          }),
+          signal: controller.signal,
+        })
+        const payload = await response.json().catch(() => null)
+
+        if (!response.ok) {
+          throw new Error(payload?.error || "Could not resolve account name.")
+        }
+
+        setAccountName(String(payload?.accountName || ""))
+      } catch {
+        if (!controller.signal.aborted) {
+          setAccountName("")
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setResolvingAccountName(false)
+        }
+      }
+    }, 400)
+
+    return () => {
+      controller.abort()
+      window.clearTimeout(timer)
+    }
+  }, [bankCode, isAuthenticated, sanitizedAccountNumber])
 
   const yesterdayEarnings = 48000
   const weeklyEarnings = weeklyData.reduce((sum, item) => sum + item.amount, 0)
@@ -539,15 +656,33 @@ export default function EarningsPage() {
 
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-zinc-300">Bank name</label>
-                    <div className="relative">
-                      <Building2 className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
-                      <Input
-                        placeholder="e.g. GTBank"
-                        value={bankName}
-                        onChange={(event) => setBankName(event.target.value)}
-                        className="h-12 border-zinc-800 bg-zinc-900 pl-11 text-white placeholder:text-zinc-600 focus-visible:border-purple-500 focus-visible:ring-purple-500/20"
-                      />
-                    </div>
+                    <Select
+                      value={bankCode}
+                      onValueChange={(value) => {
+                        const selectedBank = banks.find((bank) => bank.code === value)
+                        setBankCode(value)
+                        setBankName(selectedBank?.name || "")
+                        setAccountName("")
+                      }}
+                    >
+                      <SelectTrigger className="h-12 border-zinc-800 bg-zinc-900 text-white focus:ring-purple-500/20">
+                        <div className="flex items-center gap-2">
+                          <Building2 className="h-4 w-4 text-zinc-500" />
+                          <SelectValue placeholder={banksLoading ? "Loading banks..." : "Select bank"} />
+                        </div>
+                      </SelectTrigger>
+                      <SelectContent className="border-zinc-800 bg-zinc-900">
+                        {banks.map((bank) => (
+                          <SelectItem
+                            key={bank.code}
+                            value={bank.code}
+                            className="text-white focus:bg-zinc-800 focus:text-white"
+                          >
+                            {bank.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   <div className="space-y-2">
@@ -558,11 +693,31 @@ export default function EarningsPage() {
                         inputMode="numeric"
                         placeholder="10-digit account number"
                         value={accountNumber}
-                        onChange={(event) =>
+                        onChange={(event) => {
                           setAccountNumber(event.target.value.replace(/\D/g, "").slice(0, 10))
-                        }
+                          setAccountName("")
+                        }}
                         className="h-12 border-zinc-800 bg-zinc-900 pl-11 text-white placeholder:text-zinc-600 focus-visible:border-purple-500 focus-visible:ring-purple-500/20"
                       />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-zinc-300">Account name</label>
+                    <div className="relative">
+                      <Input
+                        readOnly
+                        value={accountName}
+                        placeholder={
+                          resolvingAccountName
+                            ? "Resolving account name..."
+                            : "Account name will appear automatically"
+                        }
+                        className="h-12 border-zinc-800 bg-zinc-900 pr-11 text-white placeholder:text-zinc-600 focus-visible:border-purple-500 focus-visible:ring-purple-500/20"
+                      />
+                      {resolvingAccountName ? (
+                        <LoaderCircle className="absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-zinc-500" />
+                      ) : null}
                     </div>
                   </div>
 
@@ -622,6 +777,12 @@ export default function EarningsPage() {
                         </span>
                       </div>
                       <div className="flex items-center justify-between text-sm">
+                        <span className="text-zinc-500">Account name</span>
+                        <span className="font-medium text-white text-right">
+                          {accountName.trim() || "Awaiting bank verification"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
                         <span className="text-zinc-500">Account</span>
                         <span className="font-mono text-white">
                           {sanitizedAccountNumber
@@ -650,7 +811,7 @@ export default function EarningsPage() {
                     <div className="flex flex-col gap-3 pt-2">
                       <Button
                         onClick={handleWithdraw}
-                        disabled={!canSubmitWithdrawal || loading}
+                        disabled={!canSubmitWithdrawal || loading || resolvingAccountName}
                         className="h-11 bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:opacity-90 disabled:opacity-50"
                       >
                         {loading ? "Processing withdrawal..." : "Confirm Withdrawal"}

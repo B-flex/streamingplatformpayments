@@ -10,13 +10,11 @@ import {
   type ReactNode,
 } from "react"
 import {
-  CUSTOM_GIFTS_STORAGE_KEY,
   defaultCustomGifts,
-  readStoredCustomGifts,
   sanitizeCustomGifts,
-  writeStoredCustomGifts,
   type CustomGiftDefinition,
 } from "@/lib/custom-gifts"
+import { useAuth } from "@/app/context/AuthContext"
 
 type CustomGiftsContextValue = {
   customGifts: CustomGiftDefinition[]
@@ -27,35 +25,53 @@ type CustomGiftsContextValue = {
 const CustomGiftsContext = createContext<CustomGiftsContextValue | null>(null)
 
 export function CustomGiftsProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth()
   const [customGifts, setCustomGifts] = useState<CustomGiftDefinition[]>(defaultCustomGifts)
+  const storageKey = user ? `streamtip.custom.gifts.${user.id}` : "streamtip.custom.gifts.guest"
 
   useEffect(() => {
-    setCustomGifts(readStoredCustomGifts())
-  }, [])
+    if (typeof window === "undefined") return
+
+    try {
+      const raw = window.localStorage.getItem(storageKey)
+      setCustomGifts(raw ? sanitizeCustomGifts(JSON.parse(raw)) : defaultCustomGifts)
+    } catch {
+      setCustomGifts(defaultCustomGifts)
+    }
+  }, [storageKey])
 
   useEffect(() => {
     const syncFromStorage = (event: StorageEvent) => {
-      if (event.key && event.key !== CUSTOM_GIFTS_STORAGE_KEY) {
+      if (event.key && event.key !== storageKey) {
         return
       }
 
-      setCustomGifts(readStoredCustomGifts())
+      try {
+        const raw = window.localStorage.getItem(storageKey)
+        setCustomGifts(raw ? sanitizeCustomGifts(JSON.parse(raw)) : defaultCustomGifts)
+      } catch {
+        setCustomGifts(defaultCustomGifts)
+      }
     }
 
     window.addEventListener("storage", syncFromStorage)
     return () => window.removeEventListener("storage", syncFromStorage)
-  }, [])
+  }, [storageKey])
 
   const saveCustomGifts = useCallback((value: CustomGiftDefinition[]) => {
     const nextValue = sanitizeCustomGifts(value)
     setCustomGifts(nextValue)
-    writeStoredCustomGifts(nextValue)
-  }, [])
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(storageKey, JSON.stringify(nextValue))
+    }
+  }, [storageKey])
 
   const resetCustomGifts = useCallback(() => {
     setCustomGifts(defaultCustomGifts)
-    writeStoredCustomGifts(defaultCustomGifts)
-  }, [])
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(storageKey, JSON.stringify(defaultCustomGifts))
+    }
+  }, [storageKey])
 
   const contextValue = useMemo(
     () => ({

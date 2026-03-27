@@ -7,6 +7,9 @@ import {
   Check,
   CreditCard,
   Eye,
+  EyeOff,
+  ImagePlus,
+  KeyRound,
   Mail,
   Save,
   Sparkles,
@@ -32,6 +35,13 @@ import type { AppUser } from "@/lib/user"
 type ProfileForm = {
   name: string
   email: string
+  profileImage: string
+}
+
+type PasswordForm = {
+  currentPassword: string
+  newPassword: string
+  confirmPassword: string
 }
 
 type SaveState = "idle" | "saving" | "saved" | "error"
@@ -66,7 +76,7 @@ const NOTIFICATION_SETTINGS: Array<{
   {
     id: "notificationSounds",
     label: "Notification Sounds",
-    description: "Play the configured browser sound for donations and payouts.",
+    description: "Play the configured browser sounds for donations and payouts.",
     icon: Volume2,
   },
 ]
@@ -123,22 +133,44 @@ export default function SettingsPage() {
   const { preferences, updatePreference } = useAppPreferences()
   const { customization, updateCustomization } = useOverlayCustomization()
   const { settings: overlaySettings, updateSetting } = useOverlaySettings()
-  const [profile, setProfile] = useState<ProfileForm>({ name: "", email: "" })
+  const [profile, setProfile] = useState<ProfileForm>({ name: "", email: "", profileImage: "" })
+  const [passwordForm, setPasswordForm] = useState<PasswordForm>({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  })
+  const [showPasswords, setShowPasswords] = useState({
+    currentPassword: false,
+    newPassword: false,
+    confirmPassword: false,
+  })
   const [saveState, setSaveState] = useState<SaveState>("idle")
+  const [passwordState, setPasswordState] = useState<SaveState>("idle")
   const [profileMessage, setProfileMessage] = useState("")
+  const [passwordMessage, setPasswordMessage] = useState("")
   const [isLoadingUser, setIsLoadingUser] = useState(true)
 
   useEffect(() => {
     setProfile({
       name: user?.name || "",
       email: user?.email || "",
+      profileImage: user?.profileImage || "",
     })
     setIsLoadingUser(false)
   }, [user])
 
   const profileDirty = useMemo(() => {
-    return profile.name !== (user?.name || "") || profile.email !== (user?.email || "")
+    return (
+      profile.name !== (user?.name || "") ||
+      profile.email !== (user?.email || "") ||
+      profile.profileImage !== (user?.profileImage || "")
+    )
   }, [profile, user])
+
+  const passwordDirty = useMemo(
+    () => Boolean(passwordForm.currentPassword || passwordForm.newPassword || passwordForm.confirmPassword),
+    [passwordForm],
+  )
 
   const handleProfileChange = (field: keyof ProfileForm, value: string) => {
     setProfile((current) => ({
@@ -147,6 +179,16 @@ export default function SettingsPage() {
     }))
     setSaveState("idle")
     setProfileMessage("")
+  }
+
+  const handleProfileImageChange = async (file: File | null) => {
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      handleProfileChange("profileImage", typeof reader.result === "string" ? reader.result : "")
+    }
+    reader.readAsDataURL(file)
   }
 
   const handleProfileSave = async () => {
@@ -160,14 +202,15 @@ export default function SettingsPage() {
     setProfileMessage("")
 
     try {
-        const response = await authRequest("/user", {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
+      const response = await authRequest("/user", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           name: profile.name.trim(),
           email: profile.email.trim(),
+          profileImage: profile.profileImage,
         }),
       })
 
@@ -182,17 +225,68 @@ export default function SettingsPage() {
       setProfile({
         name: nextUser.name,
         email: nextUser.email,
+        profileImage: nextUser.profileImage || "",
       })
       setSaveState("saved")
       setProfileMessage("Profile settings saved successfully.")
-      window.setTimeout(() => {
-        setSaveState("idle")
-      }, 2500)
+      window.setTimeout(() => setSaveState("idle"), 2500)
     } catch (error) {
       setSaveState("error")
-      setProfileMessage(
-        error instanceof Error ? error.message : "Could not save your profile.",
-      )
+      setProfileMessage(error instanceof Error ? error.message : "Could not save your profile.")
+    }
+  }
+
+  const handlePasswordSave = async () => {
+    if (!passwordForm.currentPassword || !passwordForm.newPassword) {
+      setPasswordState("error")
+      setPasswordMessage("Current password and new password are required.")
+      return
+    }
+
+    if (passwordForm.newPassword.length < 8) {
+      setPasswordState("error")
+      setPasswordMessage("New password must be at least 8 characters long.")
+      return
+    }
+
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setPasswordState("error")
+      setPasswordMessage("New password confirmation does not match.")
+      return
+    }
+
+    setPasswordState("saving")
+    setPasswordMessage("")
+
+    try {
+      const response = await authRequest("/user", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: profile.name.trim() || user?.name || "",
+          email: profile.email.trim() || user?.email || "",
+          profileImage: profile.profileImage,
+          currentPassword: passwordForm.currentPassword,
+          newPassword: passwordForm.newPassword,
+        }),
+      })
+
+      const payload = await response.json().catch(() => null)
+
+      if (!response.ok) {
+        throw new Error(payload?.error || "Could not update password.")
+      }
+
+      await refreshUser()
+      setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" })
+      setPasswordState("saved")
+      setPasswordMessage("Password updated successfully.")
+      window.setTimeout(() => setPasswordState("idle"), 2500)
+    } catch (error) {
+      setPasswordState("error")
+      setPasswordMessage(error instanceof Error ? error.message : "Could not update password.")
     }
   }
 
@@ -202,7 +296,7 @@ export default function SettingsPage() {
         <div className="space-y-1">
           <h1 className="text-2xl font-bold text-white">Settings</h1>
           <p className="text-zinc-500">
-            Manage your profile, live notifications, and overlay behavior from one place.
+            Manage your profile, account access, live notifications, and overlay behavior from one place.
           </p>
         </div>
         <Link
@@ -223,6 +317,40 @@ export default function SettingsPage() {
           </div>
 
           <div className="space-y-5 p-6">
+            <div className="flex items-center gap-4">
+              <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border border-zinc-700 bg-zinc-950/70">
+                {profile.profileImage ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={profile.profileImage} alt="Profile" className="h-full w-full object-cover" />
+                ) : (
+                  <User className="h-8 w-8 text-zinc-500" />
+                )}
+              </div>
+              <div className="space-y-2">
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-900">
+                  <ImagePlus className="h-4 w-4" />
+                  Upload Profile Photo
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(event) => {
+                      void handleProfileImageChange(event.target.files?.[0] || null)
+                    }}
+                  />
+                </label>
+                {profile.profileImage ? (
+                  <button
+                    type="button"
+                    onClick={() => handleProfileChange("profileImage", "")}
+                    className="text-sm text-zinc-500 hover:text-white"
+                  >
+                    Remove current photo
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
             <div className="space-y-2">
               <label className="flex items-center gap-2 text-sm font-medium text-zinc-300">
                 <User className="h-4 w-4 text-zinc-500" />
@@ -302,31 +430,128 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/80">
-          <div className="border-b border-zinc-800 px-6 py-4">
-            <h2 className="text-lg font-semibold text-white">Account Overview</h2>
-            <p className="mt-1 text-sm text-zinc-500">
-              Quick reference for the creator account connected to this dashboard.
-            </p>
+        <div className="space-y-6">
+          <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/80">
+            <div className="border-b border-zinc-800 px-6 py-4">
+              <h2 className="text-lg font-semibold text-white">Reset Password</h2>
+              <p className="mt-1 text-sm text-zinc-500">
+                Change your password anytime with your current password for confirmation.
+              </p>
+            </div>
+
+            <div className="space-y-4 p-6">
+              <PasswordInput
+                value={passwordForm.currentPassword}
+                visible={showPasswords.currentPassword}
+                placeholder="Current password"
+                onChange={(value) =>
+                  setPasswordForm((current) => ({ ...current, currentPassword: value }))
+                }
+                onToggleVisibility={() =>
+                  setShowPasswords((current) => ({
+                    ...current,
+                    currentPassword: !current.currentPassword,
+                  }))
+                }
+              />
+              <PasswordInput
+                value={passwordForm.newPassword}
+                visible={showPasswords.newPassword}
+                placeholder="New password"
+                onChange={(value) =>
+                  setPasswordForm((current) => ({ ...current, newPassword: value }))
+                }
+                onToggleVisibility={() =>
+                  setShowPasswords((current) => ({
+                    ...current,
+                    newPassword: !current.newPassword,
+                  }))
+                }
+              />
+              <PasswordInput
+                value={passwordForm.confirmPassword}
+                visible={showPasswords.confirmPassword}
+                placeholder="Confirm new password"
+                onChange={(value) =>
+                  setPasswordForm((current) => ({ ...current, confirmPassword: value }))
+                }
+                onToggleVisibility={() =>
+                  setShowPasswords((current) => ({
+                    ...current,
+                    confirmPassword: !current.confirmPassword,
+                  }))
+                }
+              />
+
+              {passwordMessage ? (
+                <div
+                  className={cn(
+                    "rounded-xl border px-4 py-3 text-sm",
+                    passwordState === "error"
+                      ? "border-rose-500/20 bg-rose-500/10 text-rose-200"
+                      : "border-emerald-500/20 bg-emerald-500/10 text-emerald-200",
+                  )}
+                >
+                  {passwordMessage}
+                </div>
+              ) : null}
+
+              <Button
+                onClick={handlePasswordSave}
+                disabled={passwordState === "saving" || !passwordDirty}
+                className={cn(
+                  "w-full",
+                  passwordState === "saved"
+                    ? "bg-emerald-600 hover:bg-emerald-600"
+                    : "bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:opacity-90",
+                )}
+              >
+                {passwordState === "saving" ? (
+                  <span className="flex items-center gap-2">
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                    Updating...
+                  </span>
+                ) : passwordState === "saved" ? (
+                  <span className="flex items-center gap-2">
+                    <Check className="h-4 w-4" />
+                    Updated
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-2">
+                    <KeyRound className="h-4 w-4" />
+                    Update Password
+                  </span>
+                )}
+              </Button>
+            </div>
           </div>
 
-          <div className="space-y-4 p-6">
-            <SummaryRow label="Creator name" value={user?.name || "Not registered yet"} />
-            <SummaryRow label="Email" value={user?.email || "Not registered yet"} />
-            <SummaryRow
-              label="Virtual account"
-              value={user?.virtualAccount?.accountNumber || "No virtual account yet"}
-            />
-            <SummaryRow
-              label="Bank"
-              value={user?.virtualAccount?.bankName || "Monnify account not created yet"}
-            />
-            <SummaryRow
-              label="Provider"
-              value={user?.virtualAccount?.provider || "Monnify"}
-              icon={CreditCard}
-            />
-            <SummaryRow label="Member since" value={formatMemberDate(user?.createdAt)} />
+          <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/80">
+            <div className="border-b border-zinc-800 px-6 py-4">
+              <h2 className="text-lg font-semibold text-white">Account Overview</h2>
+              <p className="mt-1 text-sm text-zinc-500">
+                Quick reference for the creator account connected to this dashboard.
+              </p>
+            </div>
+
+            <div className="space-y-4 p-6">
+              <SummaryRow label="Creator name" value={user?.name || "Not registered yet"} />
+              <SummaryRow label="Email" value={user?.email || "Not registered yet"} />
+              <SummaryRow
+                label="Virtual account"
+                value={user?.virtualAccount?.accountNumber || "No virtual account yet"}
+              />
+              <SummaryRow
+                label="Bank"
+                value={user?.virtualAccount?.bankName || "Monnify account not created yet"}
+              />
+              <SummaryRow
+                label="Provider"
+                value={user?.virtualAccount?.provider || "Monnify"}
+                icon={CreditCard}
+              />
+              <SummaryRow label="Member since" value={formatMemberDate(user?.createdAt)} />
+            </div>
           </div>
         </div>
       </section>
@@ -353,52 +578,6 @@ export default function SettingsPage() {
                 }}
               />
             ))}
-
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-medium text-white">Sound Profile</p>
-                  <p className="mt-1 text-sm text-zinc-500">
-                    Current tone style for browser notification sounds.
-                  </p>
-                </div>
-                <div className="rounded-full bg-purple-500/15 px-3 py-1 text-sm font-medium capitalize text-purple-200">
-                  {preferences.soundProfile}
-                </div>
-              </div>
-              <div className="mt-4 flex gap-3">
-                <Button
-                  type="button"
-                  variant={preferences.soundProfile === "soft" ? "default" : "outline"}
-                  className={cn(
-                    "flex-1",
-                    preferences.soundProfile === "soft"
-                      ? "bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:opacity-90"
-                      : "border-zinc-700 bg-zinc-950 text-white hover:bg-zinc-900",
-                  )}
-                  onClick={() => {
-                    void updatePreference("soundProfile", "soft")
-                  }}
-                >
-                  Soft
-                </Button>
-                <Button
-                  type="button"
-                  variant={preferences.soundProfile === "bright" ? "default" : "outline"}
-                  className={cn(
-                    "flex-1",
-                    preferences.soundProfile === "bright"
-                      ? "bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:opacity-90"
-                      : "border-zinc-700 bg-zinc-950 text-white hover:bg-zinc-900",
-                  )}
-                  onClick={() => {
-                    void updatePreference("soundProfile", "bright")
-                  }}
-                >
-                  Bright
-                </Button>
-              </div>
-            </div>
           </div>
         </div>
 
@@ -406,7 +585,7 @@ export default function SettingsPage() {
           <div className="border-b border-zinc-800 px-6 py-4">
             <h2 className="text-lg font-semibold text-white">Overlay Settings</h2>
             <p className="mt-1 text-sm text-zinc-500">
-              These are the live overlay controls used by the dashboard widget and overlay page.
+              These are the live overlay controls used by the overlay page.
             </p>
           </div>
 
@@ -496,15 +675,8 @@ function SettingToggle({
       )}
     >
       <div className="flex items-center gap-4">
-        <div
-          className={cn(
-            "rounded-xl p-2.5",
-            enabled ? "bg-purple-500/20" : "bg-zinc-800",
-          )}
-        >
-          <Icon
-            className={cn("h-5 w-5", enabled ? "text-purple-300" : "text-zinc-500")}
-          />
+        <div className={cn("rounded-xl p-2.5", enabled ? "bg-purple-500/20" : "bg-zinc-800")}>
+          <Icon className={cn("h-5 w-5", enabled ? "text-purple-300" : "text-zinc-500")} />
         </div>
         <div>
           <p className={cn("font-medium", enabled ? "text-white" : "text-zinc-300")}>
@@ -518,6 +690,40 @@ function SettingToggle({
         onCheckedChange={onToggle}
         className="data-[state=checked]:bg-purple-500"
       />
+    </div>
+  )
+}
+
+function PasswordInput({
+  value,
+  visible,
+  placeholder,
+  onChange,
+  onToggleVisibility,
+}: {
+  value: string
+  visible: boolean
+  placeholder: string
+  onChange: (value: string) => void
+  onToggleVisibility: () => void
+}) {
+  return (
+    <div className="relative">
+      <Input
+        type={visible ? "text" : "password"}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className="border-zinc-700 bg-zinc-950/70 pr-12 text-white placeholder:text-zinc-500"
+      />
+      <button
+        type="button"
+        onClick={onToggleVisibility}
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 transition-colors hover:text-white"
+        aria-label={visible ? `Hide ${placeholder.toLowerCase()}` : `Show ${placeholder.toLowerCase()}`}
+      >
+        {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+      </button>
     </div>
   )
 }

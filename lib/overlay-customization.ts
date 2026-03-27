@@ -28,15 +28,19 @@ export interface OverlayCustomization {
   previewPlatform: StreamPlatformId
   goalOpacity: number
   leaderboardOpacity: number
+  accountOpacity: number
   showLeaderboard: boolean
   showGoal: boolean
+  showAccountDetails: boolean
   showTopSupporter: boolean
   showAmbientScene: boolean
   alertPosition: PositionedOverlayObject
   goalPosition: PositionedOverlayObject
   leaderboardPosition: PositionedOverlayObject
+  accountPosition: PositionedOverlayObject
   goalGradient: OverlayGradientConfig
   leaderboardGradient: OverlayGradientConfig
+  accountGradient: OverlayGradientConfig
   alertGradient: OverlayGradientConfig
 }
 
@@ -49,8 +53,10 @@ export const defaultOverlayCustomization: OverlayCustomization = {
   previewPlatform: "tiktok",
   goalOpacity: 0.92,
   leaderboardOpacity: 0.88,
+  accountOpacity: 0.9,
   showLeaderboard: true,
   showGoal: true,
+  showAccountDetails: true,
   showTopSupporter: true,
   showAmbientScene: true,
   alertPosition: {
@@ -68,6 +74,11 @@ export const defaultOverlayCustomization: OverlayCustomization = {
     offsetX: 0,
     offsetY: 0,
   },
+  accountPosition: {
+    anchor: "bottom-left",
+    offsetX: 0,
+    offsetY: 0,
+  },
   goalGradient: {
     start: "#22d3ee",
     middle: "#8b5cf6",
@@ -77,6 +88,11 @@ export const defaultOverlayCustomization: OverlayCustomization = {
     start: "#818cf8",
     middle: "#22d3ee",
     end: "#f472b6",
+  },
+  accountGradient: {
+    start: "#1d4ed8",
+    middle: "#0f766e",
+    end: "#22c55e",
   },
   alertGradient: {
     start: "#f472b6",
@@ -190,6 +206,10 @@ export function sanitizeOverlayCustomization(value: unknown): OverlayCustomizati
       candidate.leaderboardOpacity,
       defaultOverlayCustomization.leaderboardOpacity,
     ),
+    accountOpacity: sanitizeOpacity(
+      candidate.accountOpacity,
+      defaultOverlayCustomization.accountOpacity,
+    ),
     showLeaderboard:
       typeof candidate.showLeaderboard === "boolean"
         ? candidate.showLeaderboard
@@ -198,6 +218,10 @@ export function sanitizeOverlayCustomization(value: unknown): OverlayCustomizati
       typeof candidate.showGoal === "boolean"
         ? candidate.showGoal
         : defaultOverlayCustomization.showGoal,
+    showAccountDetails:
+      typeof candidate.showAccountDetails === "boolean"
+        ? candidate.showAccountDetails
+        : defaultOverlayCustomization.showAccountDetails,
     showTopSupporter:
       typeof candidate.showTopSupporter === "boolean"
         ? candidate.showTopSupporter
@@ -215,10 +239,18 @@ export function sanitizeOverlayCustomization(value: unknown): OverlayCustomizati
       candidate.leaderboardPosition,
       defaultOverlayCustomization.leaderboardPosition,
     ),
+    accountPosition: sanitizePosition(
+      candidate.accountPosition,
+      defaultOverlayCustomization.accountPosition,
+    ),
     goalGradient: sanitizeGradient(candidate.goalGradient, defaultOverlayCustomization.goalGradient),
     leaderboardGradient: sanitizeGradient(
       candidate.leaderboardGradient,
       defaultOverlayCustomization.leaderboardGradient,
+    ),
+    accountGradient: sanitizeGradient(
+      candidate.accountGradient,
+      defaultOverlayCustomization.accountGradient,
     ),
     alertGradient: sanitizeGradient(
       candidate.alertGradient,

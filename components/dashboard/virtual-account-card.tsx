@@ -55,7 +55,9 @@ export function VirtualAccountCard({ account, className }: VirtualAccountCardPro
       <div className="px-5 py-4 border-b border-zinc-800 bg-gradient-to-r from-purple-500/10 to-pink-500/10">
         <h3 className="text-lg font-semibold text-white">Virtual Account</h3>
         <p className="text-sm text-zinc-500 mt-1">
-          Share this account to receive donations
+          {account.accountNumber === "Pending provisioning"
+            ? "Provisioning is pending. Refresh later or retry when Monnify is available."
+            : "Share this account to receive donations"}
         </p>
       </div>
       

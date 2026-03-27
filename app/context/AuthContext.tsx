@@ -32,8 +32,9 @@ type AuthContextValue = {
   user: AppUser | null
   isLoading: boolean
   isAuthenticated: boolean
-  login: (input: LoginInput) => Promise<AppUser>
-  register: (input: RegisterInput) => Promise<AppUser>
+  login: (input: LoginInput) => Promise<AuthResponse>
+  register: (input: RegisterInput) => Promise<AuthResponse>
+  socialLogin: (provider: "google" | "apple", payload: { credential?: string; identityToken?: string }) => Promise<AuthResponse>
   logout: () => Promise<void>
   refreshUser: () => Promise<AppUser | null>
   setUser: (user: AppUser | null) => void
@@ -84,7 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const handleAuthSuccess = useCallback((payload: AuthResponse) => {
     setStoredSessionToken(payload.sessionToken)
     setUser(payload.user)
-    return payload.user
+    return payload
   }, [])
 
   const register = useCallback(
@@ -129,6 +130,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [handleAuthSuccess],
   )
 
+  const socialLogin = useCallback(
+    async (
+      provider: "google" | "apple",
+      payload: { credential?: string; identityToken?: string },
+    ) => {
+      const response = await fetch(`http://localhost:5000/auth/oauth/${provider}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok) {
+        throw new Error(data?.error || `${provider} sign-in failed.`)
+      }
+
+      return handleAuthSuccess(data as AuthResponse)
+    },
+    [handleAuthSuccess],
+  )
+
   const logout = useCallback(async () => {
     try {
       await authRequest("/auth/logout", { method: "POST" })
@@ -145,11 +170,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated: Boolean(user),
       login,
       register,
+      socialLogin,
       logout,
       refreshUser,
       setUser,
     }),
-    [isLoading, login, logout, refreshUser, register, user],
+    [isLoading, login, logout, refreshUser, register, socialLogin, user],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

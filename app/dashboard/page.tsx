@@ -1,20 +1,11 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
 import { Wallet, Users, TrendingUp, Gift } from "lucide-react"
 import { useDonations } from "@/app/context/DonationsContext"
-import { useOverlaySettings } from "@/app/context/OverlaySettingsContext"
-import { useOverlayCustomization } from "@/app/context/OverlayCustomizationContext"
 import { useAuth } from "@/app/context/AuthContext"
 import { StatsCard } from "@/components/dashboard/stats-card"
 import { DonationsTable } from "@/components/dashboard/donations-table"
 import { VirtualAccountCard } from "@/components/dashboard/virtual-account-card"
-import { AnimationToggle, defaultOverlaySettings } from "@/components/dashboard/animation-toggle"
-import { ObsConnectCard } from "@/components/dashboard/obs-connect-card"
-import { OverlayShowcaseSettings } from "@/components/dashboard/overlay-showcase-settings"
-import type { OverlaySettingId } from "@/lib/overlay-settings"
-import { giftPackThemes } from "@/lib/gifts"
-import type { OverlayCustomization } from "@/lib/overlay-customization"
 
 const fallbackVirtualAccount = {
   accountName: "No virtual account yet",
@@ -31,45 +22,7 @@ const formatCurrency = (num: number) => {
 
 export default function DashboardPage() {
   const { donations } = useDonations()
-  const { settings, updateSetting } = useOverlaySettings()
-  const { customization, updateCustomization } = useOverlayCustomization()
   const { user } = useAuth()
-  const [draftCustomization, setDraftCustomization] = useState<OverlayCustomization>(customization)
-  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle")
-
-  useEffect(() => {
-    setDraftCustomization(customization)
-  }, [customization])
-
-  const overlaySettings = defaultOverlaySettings.map((item) => ({
-    ...item,
-    enabled: settings[item.id],
-  }))
-
-  const handleToggle = async (id: OverlaySettingId, enabled: boolean) => {
-    await updateSetting(id, enabled)
-  }
-
-  const customizationChanged = useMemo(
-    () =>
-      draftCustomization.giftPack !== customization.giftPack ||
-      draftCustomization.goalAmount !== customization.goalAmount ||
-      draftCustomization.goalTitle !== customization.goalTitle,
-    [customization, draftCustomization],
-  )
-
-  const handleSaveExperience = async () => {
-    setSaveState("saving")
-
-    updateCustomization("giftPack", draftCustomization.giftPack)
-    updateCustomization("goalTitle", draftCustomization.goalTitle.trim() || "Tonight's Gift Goal")
-    updateCustomization("goalAmount", Math.max(1000, draftCustomization.goalAmount))
-
-    setSaveState("saved")
-    window.setTimeout(() => {
-      setSaveState("idle")
-    }, 2200)
-  }
 
   const totalEarnings = donations.reduce((sum, donation) => sum + Number(donation.amount || 0), 0)
   const totalDonations = donations.length
@@ -122,27 +75,6 @@ export default function DashboardPage() {
 
         <div className="space-y-6">
           <VirtualAccountCard account={user?.virtualAccount || fallbackVirtualAccount} />
-          <AnimationToggle settings={overlaySettings} onToggle={handleToggle} />
-          <OverlayShowcaseSettings
-            customization={draftCustomization}
-            giftPacks={giftPackThemes}
-            onGiftPackChange={(giftPack) =>
-              setDraftCustomization((current) => ({ ...current, giftPack }))
-            }
-            onGoalTitleChange={(title) =>
-              setDraftCustomization((current) => ({ ...current, goalTitle: title }))
-            }
-            onGoalAmountChange={(amount) =>
-              setDraftCustomization((current) => ({
-                ...current,
-                goalAmount: Number.isFinite(amount) ? Math.max(1000, amount) : 1000,
-              }))
-            }
-            saveState={saveState}
-            onSave={handleSaveExperience}
-            disableSave={!customizationChanged}
-          />
-          <ObsConnectCard />
         </div>
       </div>
     </div>

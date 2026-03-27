@@ -42,6 +42,16 @@ export interface CustomGiftDefinition {
   accentEnd: string
 }
 
+export type GiftCatalogItem = {
+  name: string
+  icon: string
+  animationType: GiftAnimationType
+  accentStart: string
+  accentMiddle: string
+  accentEnd: string
+  previewLabel: string
+}
+
 export const CUSTOM_GIFTS_STORAGE_KEY = "streamtip.custom.gifts"
 
 export const giftAnimationOptions: Array<{
@@ -81,110 +91,302 @@ export const giftAnimationOptions: Array<{
   { id: "crown-wave", label: "Crown Wave", description: "Premium crest-like flowing wave." },
 ]
 
-export const defaultCustomGifts: CustomGiftDefinition[] = [
+export const giftCatalog: GiftCatalogItem[] = [
   {
-    id: "gift-rose",
     name: "Rose",
     icon: "🌹",
-    minAmount: 1,
-    maxAmount: 49,
     animationType: "rose-bloom",
     accentStart: "#fb7185",
     accentMiddle: "#f472b6",
     accentEnd: "#fda4af",
+    previewLabel: "Soft petal bloom",
   },
   {
-    id: "gift-panda",
     name: "Panda",
     icon: "🐼",
-    minAmount: 50,
-    maxAmount: 299,
     animationType: "bubble-pop",
     accentStart: "#60a5fa",
     accentMiddle: "#22d3ee",
     accentEnd: "#a5f3fc",
+    previewLabel: "Cute mascot bounce",
   },
   {
-    id: "gift-perfume",
     name: "Perfume",
     icon: "💐",
-    minAmount: 300,
-    maxAmount: 999,
     animationType: "petal-rain",
     accentStart: "#f9a8d4",
     accentMiddle: "#c084fc",
     accentEnd: "#fbcfe8",
+    previewLabel: "Luxury bloom spray",
   },
   {
-    id: "gift-confetti",
+    name: "I Love You",
+    icon: "❤️",
+    animationType: "heart-pulse",
+    accentStart: "#fb7185",
+    accentMiddle: "#ef4444",
+    accentEnd: "#fda4af",
+    previewLabel: "Heart pulse scene",
+  },
+  {
     name: "Confetti",
     icon: "🎉",
-    minAmount: 1000,
-    maxAmount: 4999,
     animationType: "confetti-burst",
     accentStart: "#f59e0b",
     accentMiddle: "#ec4899",
     accentEnd: "#38bdf8",
+    previewLabel: "Celebration burst",
   },
   {
-    id: "gift-money-rain",
+    name: "Sunglasses",
+    icon: "😎",
+    animationType: "laser-sweep",
+    accentStart: "#facc15",
+    accentMiddle: "#fb7185",
+    accentEnd: "#38bdf8",
+    previewLabel: "Cool neon sweep",
+  },
+  {
     name: "Money Rain",
     icon: "💸",
-    minAmount: 5000,
-    maxAmount: 14999,
     animationType: "money-cannon",
     accentStart: "#4ade80",
     accentMiddle: "#22c55e",
     accentEnd: "#86efac",
+    previewLabel: "Cash shower moment",
   },
   {
-    id: "gift-disco-ball",
     name: "Disco Ball",
     icon: "🪩",
-    minAmount: 15000,
-    maxAmount: 44999,
     animationType: "disco-spin",
     accentStart: "#818cf8",
     accentMiddle: "#c084fc",
     accentEnd: "#f472b6",
+    previewLabel: "Club light spin",
   },
   {
-    id: "gift-airplane",
+    name: "Mermaid",
+    icon: "🧜‍♀️",
+    animationType: "mermaid-wave",
+    accentStart: "#38bdf8",
+    accentMiddle: "#2dd4bf",
+    accentEnd: "#c084fc",
+    previewLabel: "Ocean ribbon wave",
+  },
+  {
     name: "Airplane",
     icon: "✈️",
-    minAmount: 45000,
-    maxAmount: 149999,
     animationType: "airplane-flyover",
     accentStart: "#38bdf8",
     accentMiddle: "#60a5fa",
     accentEnd: "#a78bfa",
+    previewLabel: "Full flyover scene",
   },
   {
-    id: "gift-lion",
+    name: "Planet",
+    icon: "🌍",
+    animationType: "planet-orbit",
+    accentStart: "#34d399",
+    accentMiddle: "#22d3ee",
+    accentEnd: "#60a5fa",
+    previewLabel: "Orbit ring stage",
+  },
+  {
+    name: "Diamond Flight",
+    icon: "💎",
+    animationType: "diamond-storm",
+    accentStart: "#93c5fd",
+    accentMiddle: "#c084fc",
+    accentEnd: "#e0f2fe",
+    previewLabel: "Luxury crystal storm",
+  },
+  {
     name: "Lion",
     icon: "🦁",
-    minAmount: 150000,
-    maxAmount: 449999,
     animationType: "lion-roar",
     accentStart: "#fbbf24",
     accentMiddle: "#f97316",
     accentEnd: "#fde68a",
+    previewLabel: "Royal entrance scene",
   },
   {
-    id: "gift-universe",
     name: "Universe",
     icon: "🌌",
-    minAmount: 450000,
-    maxAmount: 2000000,
     animationType: "universe-rift",
     accentStart: "#c084fc",
     accentMiddle: "#38bdf8",
     accentEnd: "#f472b6",
+    previewLabel: "Cosmic finale scene",
+  },
+  {
+    name: "Starfall",
+    icon: "🌠",
+    animationType: "starfall",
+    accentStart: "#fef08a",
+    accentMiddle: "#60a5fa",
+    accentEnd: "#c084fc",
+    previewLabel: "Falling star shimmer",
+  },
+  {
+    name: "Neon Comet",
+    icon: "☄️",
+    animationType: "neon-comet",
+    accentStart: "#22d3ee",
+    accentMiddle: "#818cf8",
+    accentEnd: "#f472b6",
+    previewLabel: "Neon trail rush",
+  },
+  {
+    name: "Aurora",
+    icon: "🌈",
+    animationType: "aurora-glow",
+    accentStart: "#22d3ee",
+    accentMiddle: "#34d399",
+    accentEnd: "#c084fc",
+    previewLabel: "Smooth aurora wave",
+  },
+  {
+    name: "Thunder Drop",
+    icon: "⚡",
+    animationType: "thunder-drop",
+    accentStart: "#fde047",
+    accentMiddle: "#60a5fa",
+    accentEnd: "#a78bfa",
+    previewLabel: "Electric impact scene",
+  },
+  {
+    name: "Pixel Party",
+    icon: "🕹️",
+    animationType: "pixel-party",
+    accentStart: "#f472b6",
+    accentMiddle: "#60a5fa",
+    accentEnd: "#4ade80",
+    previewLabel: "Arcade burst vibe",
+  },
+  {
+    name: "Meteor Rush",
+    icon: "🪐",
+    animationType: "meteor-rush",
+    accentStart: "#fb7185",
+    accentMiddle: "#f59e0b",
+    accentEnd: "#fef08a",
+    previewLabel: "Fast meteor streak",
+  },
+  {
+    name: "Angel Wings",
+    icon: "🪽",
+    animationType: "angel-wings",
+    accentStart: "#f8fafc",
+    accentMiddle: "#cbd5e1",
+    accentEnd: "#a5b4fc",
+    previewLabel: "Soft wing reveal",
+  },
+  {
+    name: "Fire Crown",
+    icon: "👑",
+    animationType: "fire-crown",
+    accentStart: "#fb7185",
+    accentMiddle: "#f97316",
+    accentEnd: "#facc15",
+    previewLabel: "Flaming crown flare",
+  },
+  {
+    name: "Ice Shards",
+    icon: "❄️",
+    animationType: "ice-shards",
+    accentStart: "#e0f2fe",
+    accentMiddle: "#7dd3fc",
+    accentEnd: "#93c5fd",
+    previewLabel: "Crystal freeze burst",
+  },
+  {
+    name: "Cosmic Ribbon",
+    icon: "🛸",
+    animationType: "cosmic-ribbon",
+    accentStart: "#38bdf8",
+    accentMiddle: "#a78bfa",
+    accentEnd: "#f472b6",
+    previewLabel: "Orbit ribbon flow",
+  },
+  {
+    name: "Golden Ring",
+    icon: "💍",
+    animationType: "golden-ring",
+    accentStart: "#fde68a",
+    accentMiddle: "#fbbf24",
+    accentEnd: "#f59e0b",
+    previewLabel: "Gold halo moment",
+  },
+  {
+    name: "Rocket Burst",
+    icon: "🚀",
+    animationType: "rocket-burst",
+    accentStart: "#38bdf8",
+    accentMiddle: "#818cf8",
+    accentEnd: "#f472b6",
+    previewLabel: "Vertical launch burst",
+  },
+  {
+    name: "Candy Pop",
+    icon: "🍭",
+    animationType: "candy-pop",
+    accentStart: "#fb7185",
+    accentMiddle: "#f472b6",
+    accentEnd: "#facc15",
+    previewLabel: "Playful candy burst",
+  },
+  {
+    name: "Halo Rise",
+    icon: "😇",
+    animationType: "halo-rise",
+    accentStart: "#fef3c7",
+    accentMiddle: "#fde68a",
+    accentEnd: "#f8fafc",
+    previewLabel: "Halo lift scene",
+  },
+  {
+    name: "Crown Wave",
+    icon: "👑",
+    animationType: "crown-wave",
+    accentStart: "#fbbf24",
+    accentMiddle: "#f59e0b",
+    accentEnd: "#f97316",
+    previewLabel: "Royal crest wave",
   },
 ]
 
-function sanitizeHex(value: unknown, fallback: string) {
-  return typeof value === "string" && /^#[0-9A-Fa-f]{6}$/.test(value) ? value : fallback
+export const giftNameOptions = giftCatalog.map((gift) => gift.name)
+
+export const defaultCustomGifts: CustomGiftDefinition[] = [
+  { ...buildGiftDefinition("Rose"), id: "gift-rose", minAmount: 1, maxAmount: 49 },
+  { ...buildGiftDefinition("Panda"), id: "gift-panda", minAmount: 50, maxAmount: 299 },
+  { ...buildGiftDefinition("Perfume"), id: "gift-perfume", minAmount: 300, maxAmount: 999 },
+  { ...buildGiftDefinition("Confetti"), id: "gift-confetti", minAmount: 1000, maxAmount: 4999 },
+  { ...buildGiftDefinition("Money Rain"), id: "gift-money-rain", minAmount: 5000, maxAmount: 14999 },
+  { ...buildGiftDefinition("Disco Ball"), id: "gift-disco-ball", minAmount: 15000, maxAmount: 44999 },
+  { ...buildGiftDefinition("Airplane"), id: "gift-airplane", minAmount: 45000, maxAmount: 149999 },
+  { ...buildGiftDefinition("Lion"), id: "gift-lion", minAmount: 150000, maxAmount: 449999 },
+  { ...buildGiftDefinition("Universe"), id: "gift-universe", minAmount: 450000, maxAmount: 2000000 },
+]
+
+export function getGiftCatalogItem(name: string) {
+  return giftCatalog.find((gift) => gift.name === name) || giftCatalog[0]
+}
+
+export function buildGiftDefinition(name: string, overrides?: Partial<CustomGiftDefinition>) {
+  const catalogGift = getGiftCatalogItem(name)
+
+  return {
+    id: overrides?.id ?? `gift-${catalogGift.name.toLowerCase().replace(/\s+/g, "-")}`,
+    name: catalogGift.name,
+    icon: catalogGift.icon,
+    minAmount: overrides?.minAmount ?? 1,
+    maxAmount: overrides?.maxAmount ?? 5000,
+    animationType: overrides?.animationType ?? catalogGift.animationType,
+    accentStart: overrides?.accentStart ?? catalogGift.accentStart,
+    accentMiddle: overrides?.accentMiddle ?? catalogGift.accentMiddle,
+    accentEnd: overrides?.accentEnd ?? catalogGift.accentEnd,
+  }
 }
 
 function sanitizeAnimationType(value: unknown, fallback: GiftAnimationType): GiftAnimationType {
@@ -201,6 +403,11 @@ function sanitizeGift(value: unknown, fallback: CustomGiftDefinition, index: num
   }
 
   const candidate = value as Partial<Record<keyof CustomGiftDefinition, unknown>>
+  const name =
+    typeof candidate.name === "string" && candidate.name.trim() ? candidate.name.trim() : fallback.name
+  const base = buildGiftDefinition(name, {
+    id: typeof candidate.id === "string" && candidate.id.trim() ? candidate.id : `${fallback.id}-${index}`,
+  })
   const minAmount =
     typeof candidate.minAmount === "number" && Number.isFinite(candidate.minAmount)
       ? Math.max(1, Math.round(candidate.minAmount))
@@ -211,15 +418,10 @@ function sanitizeGift(value: unknown, fallback: CustomGiftDefinition, index: num
       : fallback.maxAmount
 
   return {
-    id: typeof candidate.id === "string" && candidate.id.trim() ? candidate.id : `${fallback.id}-${index}`,
-    name: typeof candidate.name === "string" && candidate.name.trim() ? candidate.name.trim() : fallback.name,
-    icon: typeof candidate.icon === "string" && candidate.icon.trim() ? candidate.icon.trim() : fallback.icon,
+    ...base,
     minAmount,
     maxAmount,
-    animationType: sanitizeAnimationType(candidate.animationType, fallback.animationType),
-    accentStart: sanitizeHex(candidate.accentStart, fallback.accentStart),
-    accentMiddle: sanitizeHex(candidate.accentMiddle, fallback.accentMiddle),
-    accentEnd: sanitizeHex(candidate.accentEnd, fallback.accentEnd),
+    animationType: sanitizeAnimationType(candidate.animationType, base.animationType),
   }
 }
 
@@ -268,15 +470,9 @@ function createGiftId() {
 }
 
 export function createEmptyCustomGift(): CustomGiftDefinition {
-  return {
+  return buildGiftDefinition("Rose", {
     id: `gift-${createGiftId()}`,
-    name: "Custom Gift",
-    icon: "✨",
     minAmount: 1000,
     maxAmount: 5000,
-    animationType: "vip-spotlight",
-    accentStart: "#8b5cf6",
-    accentMiddle: "#ec4899",
-    accentEnd: "#38bdf8",
-  }
+  })
 }

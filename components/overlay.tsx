@@ -7,10 +7,12 @@ import { Crown, Sparkles } from "lucide-react"
 import { DonationAlert } from "./donation-alert"
 import { Leaderboard, type Contributor } from "./leaderboard"
 import { ProgressBar } from "./progress-bar"
+import { useAuth } from "@/app/context/AuthContext"
 import { useOverlaySettings } from "@/app/context/OverlaySettingsContext"
 import { useOverlayCustomization } from "@/app/context/OverlayCustomizationContext"
 import { useCustomGifts } from "@/app/context/CustomGiftsContext"
 import { getGiftForAmount } from "@/lib/gifts"
+import { getStoredSessionToken } from "@/lib/auth-client"
 import type { OverlayAnchor, OverlayGradientConfig, PositionedOverlayObject } from "@/lib/overlay-customization"
 import { cn } from "@/lib/utils"
 
@@ -138,6 +140,7 @@ export default function Overlay() {
     amount: number
   }
 
+  const { user } = useAuth()
   const { settings } = useOverlaySettings()
   const { customization } = useOverlayCustomization()
   const { customGifts } = useCustomGifts()
@@ -342,7 +345,11 @@ export default function Overlay() {
   )
 
   useEffect(() => {
-    const socket = io("http://localhost:5000")
+    const socket = io("http://localhost:5000", {
+      auth: {
+        sessionToken: getStoredSessionToken(),
+      },
+    })
 
     socket.on("newDonation", (data) => {
       processDonation({
@@ -499,6 +506,34 @@ export default function Overlay() {
               <div className="rounded-[30px] bg-black/28 p-1 backdrop-blur-xl">
                 <Leaderboard contributors={contributors} />
               </div>
+            </div>
+          </div>
+        ) : null}
+
+        {customization.showAccountDetails && user?.virtualAccount?.accountNumber ? (
+          <div
+            className={cn(
+              "absolute z-20 w-[340px] rounded-[28px] border border-white/14 px-5 py-4 text-white shadow-[0_0_40px_rgba(0,0,0,0.12)] backdrop-blur-xl",
+              getAnchorClass(customization.accountPosition.anchor),
+            )}
+            style={{
+              ...overlayGradientStyle(customization.accountGradient),
+              opacity: customization.accountOpacity,
+              ...overlayPositionStyle(customization.accountPosition),
+            }}
+          >
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-white/65">
+              Virtual Account
+            </p>
+            <p className="mt-2 text-lg font-bold text-white">
+              {user.virtualAccount.accountName || user.name}
+            </p>
+            <p className="mt-2 font-mono text-2xl font-black tracking-[0.12em] text-white">
+              {user.virtualAccount.accountNumber}
+            </p>
+            <div className="mt-2 flex items-center justify-between gap-3 text-sm text-white/85">
+              <span>{user.virtualAccount.bankName || "Monnify"}</span>
+              <span>{user.virtualAccount.provider || "Monnify"}</span>
             </div>
           </div>
         ) : null}

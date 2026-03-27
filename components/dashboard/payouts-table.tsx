@@ -18,7 +18,12 @@ export interface Payout {
   amount: number
   status: "completed" | "pending" | "failed"
   bankName: string
+  bankCode?: string
+  accountName?: string
   accountNumber: string
+  transferReference?: string
+  providerReference?: string
+  providerMessage?: string
   createdAt: Date
   completedAt?: Date
 }

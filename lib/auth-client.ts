@@ -5,6 +5,7 @@ export const AUTH_SESSION_STORAGE_KEY = "streamtip.auth.session"
 export interface AuthResponse {
   user: AppUser
   sessionToken: string
+  warning?: string
 }
 
 export function getStoredSessionToken() {

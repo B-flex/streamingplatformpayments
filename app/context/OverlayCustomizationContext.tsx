@@ -10,13 +10,12 @@ import {
   type ReactNode,
 } from "react"
 import {
-  OVERLAY_CUSTOMIZATION_STORAGE_KEY,
   defaultOverlayCustomization,
-  readStoredOverlayCustomization,
-  writeStoredOverlayCustomization,
+  sanitizeOverlayCustomization,
   type GiftPackId,
   type OverlayCustomization,
 } from "@/lib/overlay-customization"
+import { useAuth } from "@/app/context/AuthContext"
 
 type OverlayCustomizationContextValue = {
   customization: OverlayCustomization
@@ -29,26 +28,42 @@ type OverlayCustomizationContextValue = {
 const OverlayCustomizationContext = createContext<OverlayCustomizationContextValue | null>(null)
 
 export function OverlayCustomizationProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth()
   const [customization, setCustomization] = useState<OverlayCustomization>(
     defaultOverlayCustomization,
   )
+  const storageKey = user
+    ? `streamtip.overlay.customization.${user.id}`
+    : "streamtip.overlay.customization.guest"
 
   useEffect(() => {
-    setCustomization(readStoredOverlayCustomization())
-  }, [])
+    if (typeof window === "undefined") return
+
+    try {
+      const raw = window.localStorage.getItem(storageKey)
+      setCustomization(raw ? sanitizeOverlayCustomization(JSON.parse(raw)) : defaultOverlayCustomization)
+    } catch {
+      setCustomization(defaultOverlayCustomization)
+    }
+  }, [storageKey])
 
   useEffect(() => {
     const syncFromStorage = (event: StorageEvent) => {
-      if (event.key && event.key !== OVERLAY_CUSTOMIZATION_STORAGE_KEY) {
+      if (event.key && event.key !== storageKey) {
         return
       }
 
-      setCustomization(readStoredOverlayCustomization())
+      try {
+        const raw = window.localStorage.getItem(storageKey)
+        setCustomization(raw ? sanitizeOverlayCustomization(JSON.parse(raw)) : defaultOverlayCustomization)
+      } catch {
+        setCustomization(defaultOverlayCustomization)
+      }
     }
 
     window.addEventListener("storage", syncFromStorage)
     return () => window.removeEventListener("storage", syncFromStorage)
-  }, [])
+  }, [storageKey])
 
   const updateCustomization = useCallback(
     <K extends keyof OverlayCustomization>(key: K, value: OverlayCustomization[K]) => {
@@ -63,9 +78,11 @@ export function OverlayCustomizationProvider({ children }: { children: ReactNode
       }
 
       setCustomization(nextCustomization)
-      writeStoredOverlayCustomization(nextCustomization)
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(storageKey, JSON.stringify(nextCustomization))
+      }
     },
-    [customization],
+    [customization, storageKey],
   )
 
   const value = useMemo(

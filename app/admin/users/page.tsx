@@ -1,8 +1,19 @@
 "use client"
 
 import { useEffect, useMemo, useState, type ReactNode } from "react"
-import { Check, ShieldPlus, UserCog, UserPlus, UserRoundX, WalletCards } from "lucide-react"
+import { Check, ShieldPlus, Trash2, UserCog, UserPlus, UserRoundX, WalletCards } from "lucide-react"
 import { adminRequest } from "@/lib/admin-client"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -195,6 +206,33 @@ export default function AdminUsersPage() {
           ? requestError.message
           : "Could not create a virtual account.",
       )
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const deleteUser = async (userId: string) => {
+    setSubmitting(true)
+    setMessage("")
+    setError("")
+
+    try {
+      const response = await adminRequest(`/admin/users/${userId}`, {
+        method: "DELETE",
+      })
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Could not delete user.")
+      }
+
+      setMessage("User account deleted successfully.")
+      if (selectedUserId === userId) {
+        setSelectedUserId("")
+      }
+      await loadUsers()
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Could not delete user.")
     } finally {
       setSubmitting(false)
     }
@@ -452,6 +490,38 @@ export default function AdminUsersPage() {
                     <WalletCards className="mr-2 h-4 w-4" />
                     Create Virtual Account
                   </Button>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="outline"
+                        disabled={submitting}
+                        className="border-red-500/30 bg-red-500/10 text-red-200 hover:bg-red-500/20"
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete User
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent className="border-zinc-800 bg-zinc-950 text-white">
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Delete this user account?</AlertDialogTitle>
+                        <AlertDialogDescription className="text-zinc-400">
+                          This will permanently remove {selectedUser.email} and their creator data.
+                          Use this only when you are sure.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel className="border-zinc-700 bg-zinc-900 text-white hover:bg-zinc-800">
+                          Cancel
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={() => void deleteUser(selectedUser.id)}
+                          className="bg-red-600 text-white hover:bg-red-700"
+                        >
+                          Yes, delete user
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </div>
               </div>
             ) : (

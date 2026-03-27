@@ -7,10 +7,17 @@ const cors = require("cors")
 const axios = require("axios")
 const crypto = require("crypto")
 const { Server } = require("socket.io")
+const { AxiosError } = require("axios")
 
 const app = express()
 app.use(cors())
-app.use(express.json())
+app.use(
+  express.json({
+    verify: (req, _res, buffer) => {
+      req.rawBody = buffer.toString("utf8")
+    },
+  }),
+)
 
 const server = http.createServer(app)
 const io = new Server(server, {
@@ -23,8 +30,11 @@ const {
   MONNIFY_SECRET_KEY = "",
   MONNIFY_CONTRACT_CODE = "",
   MONNIFY_BASE_URL = "https://sandbox.monnify.com",
+  GOOGLE_CLIENT_ID = "",
+  APPLE_CLIENT_ID = "",
   ADMIN_EMAIL = "admin@streamtip.local",
   ADMIN_PASSWORD = "ChangeMeAdmin123!",
+  MONNIFY_DISBURSEMENT_SOURCE_ACCOUNT_NUMBER = "",
 } = process.env
 
 const PLATFORM_FEE_RATE = 0.2
@@ -36,20 +46,34 @@ mongoose
   .catch((error) => console.log(error))
 
 const donationSchema = new mongoose.Schema({
+  creatorId: { type: mongoose.Schema.Types.ObjectId, ref: "User", index: true },
+  creatorEmail: String,
   sender: String,
   amount: Number,
   platformFee: Number,
   creatorShare: Number,
+  eventType: String,
+  paymentStatus: String,
+  destinationAccountNumber: String,
+  destinationBankName: String,
+  monnifyTransactionReference: { type: String, index: true, sparse: true },
+  monnifyPaymentReference: { type: String, index: true, sparse: true },
   date: { type: Date, default: Date.now },
 })
 
 const Donation = mongoose.model("Donation", donationSchema)
 
 const payoutSchema = new mongoose.Schema({
+  creatorId: { type: mongoose.Schema.Types.ObjectId, ref: "User", index: true },
   amount: Number,
   status: String,
   bankName: String,
+  bankCode: String,
   accountNumber: String,
+  accountName: String,
+  transferReference: String,
+  providerReference: String,
+  providerMessage: String,
   createdAt: { type: Date, default: Date.now },
   completedAt: Date,
 })
@@ -60,9 +84,13 @@ const platformWithdrawalSchema = new mongoose.Schema({
   amount: Number,
   status: String,
   bankName: String,
+  bankCode: String,
   accountNumber: String,
   accountName: String,
   note: String,
+  transferReference: String,
+  providerReference: String,
+  providerMessage: String,
   createdAt: { type: Date, default: Date.now },
   completedAt: Date,
 })
@@ -99,8 +127,11 @@ const userSchema = new mongoose.Schema(
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     passwordHash: { type: String, required: true },
     sessionToken: { type: String, default: null },
+    googleSub: { type: String, default: "", index: true },
+    appleSub: { type: String, default: "", index: true },
     role: { type: String, enum: ["creator", "admin"], default: "creator" },
     status: { type: String, enum: ["active", "suspended", "banned"], default: "active" },
+    profileImage: { type: String, default: "" },
     virtualAccount: {
       accountReference: String,
       accountName: String,
@@ -120,6 +151,32 @@ const userSchema = new mongoose.Schema(
 
 const User = mongoose.model("User", userSchema)
 
+function getCreatorRoom(userId) {
+  return `creator:${String(userId)}`
+}
+
+const fallbackBanks = [
+  { name: "Access Bank", code: "044" },
+  { name: "First Bank of Nigeria", code: "011" },
+  { name: "Fidelity Bank", code: "070" },
+  { name: "FCMB", code: "214" },
+  { name: "Guaranty Trust Bank", code: "058" },
+  { name: "Jaiz Bank", code: "301" },
+  { name: "Keystone Bank", code: "082" },
+  { name: "Kuda Bank", code: "50211" },
+  { name: "Moniepoint MFB", code: "50515" },
+  { name: "OPay", code: "999992" },
+  { name: "Polaris Bank", code: "076" },
+  { name: "Providus Bank", code: "101" },
+  { name: "Stanbic IBTC Bank", code: "221" },
+  { name: "Sterling Bank", code: "232" },
+  { name: "UBA", code: "033" },
+  { name: "Union Bank", code: "032" },
+  { name: "Unity Bank", code: "215" },
+  { name: "Wema Bank", code: "035" },
+  { name: "Zenith Bank", code: "057" },
+]
+
 function isMonnifyConfigured() {
   return Boolean(MONNIFY_API_KEY && MONNIFY_SECRET_KEY && MONNIFY_CONTRACT_CODE)
 }
@@ -133,6 +190,7 @@ function sanitizeUser(user) {
     email: user.email,
     role: user.role || "creator",
     status: user.status || "active",
+    profileImage: user.profileImage || "",
     virtualAccount: user.virtualAccount || null,
     createdAt: user.createdAt,
   }
@@ -159,6 +217,37 @@ function verifyPassword(password, passwordHash) {
 
 function generateSessionToken() {
   return crypto.randomBytes(32).toString("hex")
+}
+
+function safeTimingEqual(left, right) {
+  const leftBuffer = Buffer.from(String(left || ""), "utf8")
+  const rightBuffer = Buffer.from(String(right || ""), "utf8")
+
+  if (leftBuffer.length !== rightBuffer.length) {
+    return false
+  }
+
+  return crypto.timingSafeEqual(leftBuffer, rightBuffer)
+}
+
+function verifyMonnifySignature(req) {
+  if (!MONNIFY_SECRET_KEY) {
+    return false
+  }
+
+  const headerSignature = String(req.headers["monnify-signature"] || "").trim()
+  const rawBody = typeof req.rawBody === "string" ? req.rawBody : JSON.stringify(req.body || {})
+
+  if (!headerSignature || !rawBody) {
+    return false
+  }
+
+  const expectedSignature = crypto
+    .createHmac("sha512", MONNIFY_SECRET_KEY)
+    .update(rawBody, "utf8")
+    .digest("hex")
+
+  return safeTimingEqual(headerSignature, expectedSignature)
 }
 
 function calculateRevenueSplit(amount) {
@@ -188,6 +277,260 @@ async function createAuditLog({ actorType, actorId = "", eventType, message, met
   }
 }
 
+function getAxiosErrorMessage(error, fallbackMessage) {
+  if (!(error instanceof AxiosError)) {
+    return fallbackMessage
+  }
+
+  const monnifyMessage =
+    error.response?.data?.responseMessage ||
+    error.response?.data?.responseBody?.message ||
+    error.response?.data?.message
+
+  if (typeof monnifyMessage === "string" && monnifyMessage.trim()) {
+    return monnifyMessage.trim()
+  }
+
+  return error.message || fallbackMessage
+}
+
+function buildMonnifyCustomerEmail(email, suffix) {
+  const normalizedEmail = String(email || "").toLowerCase().trim()
+  const [localPart, domain = "streamtip.local"] = normalizedEmail.split("@")
+  const safeLocalPart = (localPart || "creator").replace(/[^a-z0-9._+-]/gi, "")
+
+  return `${safeLocalPart}+${suffix}@${domain}`
+}
+
+function buildMonnifyCustomerName(name, suffix) {
+  const trimmedName = String(name || "StreamTip Creator").trim() || "StreamTip Creator"
+  return `${trimmedName} ${suffix}`.trim()
+}
+
+function isDuplicateReservedAccountError(error) {
+  const message = getAxiosErrorMessage(error, "").toLowerCase()
+  return message.includes("cannot reserve more than 1 account")
+}
+
+function isTemporaryMonnifyError(error) {
+  if (error instanceof AxiosError) {
+    const status = Number(error.response?.status || 0)
+    if (status >= 500) {
+      return true
+    }
+  }
+
+  const message = getAxiosErrorMessage(error, "").toLowerCase()
+  return (
+    message.includes("service is currently unavailable") ||
+    message.includes("try again later") ||
+    message.includes("timeout") ||
+    message.includes("temporarily unavailable")
+  )
+}
+
+function wait(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
+}
+
+async function markVirtualAccountPending(user, reason = "") {
+  user.virtualAccount = {
+    accountReference: `PENDING-${user._id}`,
+    accountName: `StreamTip/${user.name}`,
+    accountNumber: "Pending provisioning",
+    bankName: "Monnify",
+    bankCode: "",
+    reservationReference: "",
+    status: "pending",
+    provider: "monnify",
+    createdAt: new Date(),
+  }
+
+  await user.save()
+
+  await createAuditLog({
+    actorType: "system",
+    actorId: user._id.toString(),
+    eventType: "monnify.virtual_account.pending",
+    message: `Virtual account moved to pending for ${user.email}.`,
+    metadata: { reason },
+  })
+}
+
+function decodeJwtPart(value) {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/")
+  const padded = normalized + "=".repeat((4 - (normalized.length % 4 || 4)) % 4)
+  return Buffer.from(padded, "base64").toString("utf8")
+}
+
+function parseJwt(token) {
+  const parts = String(token || "").split(".")
+  if (parts.length !== 3) {
+    throw new Error("Invalid token format.")
+  }
+
+  return {
+    encodedHeader: parts[0],
+    encodedPayload: parts[1],
+    signature: parts[2],
+    header: JSON.parse(decodeJwtPart(parts[0])),
+    payload: JSON.parse(decodeJwtPart(parts[1])),
+    signingInput: `${parts[0]}.${parts[1]}`,
+  }
+}
+
+async function verifyGoogleIdToken(idToken) {
+  if (!GOOGLE_CLIENT_ID) {
+    throw new Error("Google sign-in is not configured yet.")
+  }
+
+  const response = await axios.get("https://oauth2.googleapis.com/tokeninfo", {
+    params: { id_token: idToken },
+  })
+
+  const payload = response.data || {}
+  const audiences = String(payload.aud || "").split(",").map((item) => item.trim())
+
+  if (!audiences.includes(GOOGLE_CLIENT_ID)) {
+    throw new Error("Google token audience mismatch.")
+  }
+
+  if (!payload.email) {
+    throw new Error("Google did not return an email address.")
+  }
+
+  return {
+    sub: String(payload.sub || ""),
+    email: String(payload.email).toLowerCase().trim(),
+    name: String(payload.name || payload.given_name || "Google Creator").trim(),
+    picture: String(payload.picture || "").trim(),
+  }
+}
+
+async function verifyAppleIdentityToken(identityToken) {
+  if (!APPLE_CLIENT_ID) {
+    throw new Error("Apple sign-in is not configured yet.")
+  }
+
+  const parsed = parseJwt(identityToken)
+  const response = await axios.get("https://appleid.apple.com/auth/keys")
+  const keys = Array.isArray(response.data?.keys) ? response.data.keys : []
+  const matchingKey = keys.find(
+    (key) => key.kid === parsed.header.kid && key.alg === parsed.header.alg,
+  )
+
+  if (!matchingKey) {
+    throw new Error("Unable to find matching Apple signing key.")
+  }
+
+  const publicKey = crypto.createPublicKey({
+    key: matchingKey,
+    format: "jwk",
+  })
+  const signature = Buffer.from(
+    parsed.signature.replace(/-/g, "+").replace(/_/g, "/"),
+    "base64",
+  )
+
+  const verified = crypto.verify(
+    "RSA-SHA256",
+    Buffer.from(parsed.signingInput),
+    publicKey,
+    signature,
+  )
+
+  if (!verified) {
+    throw new Error("Apple identity token verification failed.")
+  }
+
+  const payload = parsed.payload || {}
+
+  if (payload.iss !== "https://appleid.apple.com") {
+    throw new Error("Apple token issuer mismatch.")
+  }
+
+  const audience = Array.isArray(payload.aud) ? payload.aud : [payload.aud]
+  if (!audience.includes(APPLE_CLIENT_ID)) {
+    throw new Error("Apple token audience mismatch.")
+  }
+
+  if (!payload.email) {
+    throw new Error("Apple did not return an email address.")
+  }
+
+  return {
+    sub: String(payload.sub || ""),
+    email: String(payload.email).toLowerCase().trim(),
+    name: String(payload.email || "Apple Creator").split("@")[0],
+    picture: "",
+  }
+}
+
+async function createOrLoginOAuthUser({ provider, sub, email, name, picture = "" }) {
+  const providerField = provider === "google" ? "googleSub" : "appleSub"
+  let user =
+    (await User.findOne({ [providerField]: sub })) ||
+    (await User.findOne({ email }))
+
+  if (!user) {
+    user = await User.create({
+      name,
+      email,
+      passwordHash: hashPassword(generateSessionToken()),
+      sessionToken: generateSessionToken(),
+      role: "creator",
+      status: "active",
+      profileImage: picture,
+      [providerField]: sub,
+    })
+
+    await createReservedAccountForUser(user)
+
+    await createAuditLog({
+      actorType: "user",
+      actorId: user._id.toString(),
+      eventType: `user.oauth_registered.${provider}`,
+      message: `${email} registered with ${provider}.`,
+      metadata: { email, provider },
+    })
+  } else {
+    if (!user[providerField]) {
+      user[providerField] = sub
+    }
+
+    if (!user.profileImage && picture) {
+      user.profileImage = picture
+    }
+
+    if (!user.virtualAccount?.accountNumber) {
+      await createReservedAccountForUser(user)
+    }
+  }
+
+  if (user.status === "banned") {
+    throw new Error("This account has been banned.")
+  }
+
+  if (user.status === "suspended") {
+    throw new Error("This account is currently suspended.")
+  }
+
+  user.sessionToken = generateSessionToken()
+  await user.save()
+
+  await createAuditLog({
+    actorType: "user",
+    actorId: user._id.toString(),
+    eventType: `user.oauth_login.${provider}`,
+    message: `${user.email} signed in with ${provider}.`,
+    metadata: { email: user.email, provider },
+  })
+
+  return user
+}
+
 async function getMonnifyAccessToken() {
   const credentials = Buffer.from(`${MONNIFY_API_KEY}:${MONNIFY_SECRET_KEY}`).toString("base64")
 
@@ -204,6 +547,66 @@ async function getMonnifyAccessToken() {
   return response.data?.responseBody?.accessToken
 }
 
+async function getSupportedBanks() {
+  if (!isMonnifyConfigured()) {
+    return fallbackBanks
+  }
+
+  try {
+    const accessToken = await getMonnifyAccessToken()
+    const response = await axios.get(`${MONNIFY_BASE_URL}/api/v1/banks`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+      },
+    })
+
+    const responseBody = Array.isArray(response.data?.responseBody) ? response.data.responseBody : []
+    const banks = responseBody
+      .map((bank) => ({
+        name: String(bank?.name || "").trim(),
+        code: String(bank?.code || "").trim(),
+      }))
+      .filter((bank) => bank.name && bank.code)
+
+    return banks.length ? banks : fallbackBanks
+  } catch (error) {
+    console.error("Failed to load Monnify banks, using fallback bank list.", error)
+    return fallbackBanks
+  }
+}
+
+async function resolveBankAccountName({ bankCode, accountNumber }) {
+  if (!isMonnifyConfigured()) {
+    throw new Error("Monnify account validation is not configured yet.")
+  }
+
+  const accessToken = await getMonnifyAccessToken()
+  const response = await axios.get(`${MONNIFY_BASE_URL}/api/v1/disbursements/account/validate`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: "application/json",
+    },
+    params: {
+      accountNumber,
+      bankCode,
+    },
+  })
+
+  const responseBody = response.data?.responseBody || {}
+  const accountName = String(responseBody.accountName || "").trim()
+
+  if (!accountName) {
+    throw new Error("Monnify did not return an account name for that bank account.")
+  }
+
+  return {
+    accountName,
+    accountNumber: String(responseBody.accountNumber || accountNumber).trim(),
+    bankCode: String(responseBody.bankCode || bankCode).trim(),
+  }
+}
+
 async function createReservedAccountForUser(user) {
   if (!isMonnifyConfigured()) {
     throw new Error(
@@ -217,25 +620,74 @@ async function createReservedAccountForUser(user) {
 
   const accessToken = await getMonnifyAccessToken()
   const accountReference = `STIP-${user._id}-${Date.now()}`
+  const monnifySuffix = `streamtip-${String(user._id).slice(-6)}`
+  const monnifyCustomerEmail = buildMonnifyCustomerEmail(user.email, monnifySuffix)
+  const monnifyCustomerName = buildMonnifyCustomerName(user.name, monnifySuffix)
 
-  const response = await axios.post(
-    `${MONNIFY_BASE_URL}/api/v2/bank-transfer/reserved-accounts`,
-    {
-      accountReference,
-      accountName: `StreamTip/${user.name}`,
-      currencyCode: "NGN",
-      contractCode: MONNIFY_CONTRACT_CODE,
-      customerEmail: user.email,
-      customerName: user.name,
-      getAllAvailableBanks: false,
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
+  const requestReservedAccount = async (customerEmail) =>
+    axios.post(
+      `${MONNIFY_BASE_URL}/api/v2/bank-transfer/reserved-accounts`,
+      {
+        accountReference,
+        accountName: `StreamTip/${user.name}`,
+        currencyCode: "NGN",
+        contractCode: MONNIFY_CONTRACT_CODE,
+        customerEmail,
+        customerName: monnifyCustomerName,
+        getAllAvailableBanks: true,
       },
-    },
-  )
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+      },
+    )
+
+  let response
+
+  try {
+    response = await requestReservedAccount(monnifyCustomerEmail)
+  } catch (error) {
+    if (isDuplicateReservedAccountError(error)) {
+      const fallbackCustomerEmail = buildMonnifyCustomerEmail(
+        user.email,
+        `${monnifySuffix}-${Date.now()}`,
+      )
+
+      try {
+        response = await requestReservedAccount(fallbackCustomerEmail)
+      } catch (retryError) {
+        throw new Error(
+          getAxiosErrorMessage(retryError, "Could not create a Monnify reserved account."),
+        )
+      }
+    } else if (isTemporaryMonnifyError(error)) {
+      let lastError = error
+
+      for (const retryDelay of [700, 1500]) {
+        await wait(retryDelay)
+
+        try {
+          response = await requestReservedAccount(monnifyCustomerEmail)
+          lastError = null
+          break
+        } catch (retryError) {
+          lastError = retryError
+        }
+      }
+
+      if (!response && lastError) {
+        throw new Error(
+          getAxiosErrorMessage(lastError, "Could not create a Monnify reserved account."),
+        )
+      }
+    } else {
+      throw new Error(
+        getAxiosErrorMessage(error, "Could not create a Monnify reserved account."),
+      )
+    }
+  }
 
   const responseBody = response.data?.responseBody || {}
   const account =
@@ -265,15 +717,82 @@ async function createReservedAccountForUser(user) {
   return virtualAccount
 }
 
+function createTransferReference(prefix = "STIP-PAYOUT") {
+  return `${prefix}-${Date.now()}-${Math.round(Math.random() * 1_000_000)}`
+}
+
+function normalizeMonnifyTransferStatus(status) {
+  const normalized = String(status || "").toUpperCase()
+
+  if (["SUCCESS", "SUCCESSFUL", "COMPLETED"].includes(normalized)) {
+    return "completed"
+  }
+
+  if (["FAILED", "REJECTED", "CANCELLED", "EXPIRED"].includes(normalized)) {
+    return "failed"
+  }
+
+  return "pending"
+}
+
+async function initiateMonnifyDisbursement({
+  amount,
+  bankCode,
+  accountNumber,
+  accountName,
+  narration,
+  reference,
+}) {
+  if (!isMonnifyConfigured()) {
+    throw new Error("Monnify disbursement is not configured yet.")
+  }
+
+  if (!MONNIFY_DISBURSEMENT_SOURCE_ACCOUNT_NUMBER) {
+    throw new Error(
+      "MONNIFY_DISBURSEMENT_SOURCE_ACCOUNT_NUMBER is missing from Backend/.env.",
+    )
+  }
+
+  const accessToken = await getMonnifyAccessToken()
+  const response = await axios.post(
+    `${MONNIFY_BASE_URL}/api/v2/disbursements/single`,
+    {
+      amount,
+      reference,
+      narration,
+      destinationBankCode: bankCode,
+      destinationAccountNumber: accountNumber,
+      destinationAccountName: accountName,
+      currency: "NGN",
+      sourceAccountNumber: MONNIFY_DISBURSEMENT_SOURCE_ACCOUNT_NUMBER,
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+    },
+  )
+
+  return response.data?.responseBody || {}
+}
+
 async function getCurrentUser() {
   return User.findOne().sort({ createdAt: -1 })
 }
 
-async function getRevenueTotals() {
+async function getRevenueTotals({ creatorId } = {}) {
+  const donationQuery = creatorId ? { creatorId } : {}
+  const payoutQuery = {
+    status: { $ne: "failed" },
+    ...(creatorId ? { creatorId } : {}),
+  }
+  const platformWithdrawalQuery = creatorId ? { _id: null } : { status: { $ne: "failed" } }
+
   const [donations, payouts, platformWithdrawals] = await Promise.all([
-    Donation.find(),
-    Payout.find({ status: { $ne: "failed" } }),
-    PlatformWithdrawal.find({ status: { $ne: "failed" } }),
+    Donation.find(donationQuery),
+    Payout.find(payoutQuery),
+    creatorId ? [] : PlatformWithdrawal.find(platformWithdrawalQuery),
   ])
 
   const grossRevenue = donations.reduce((sum, donation) => sum + (Number(donation.amount) || 0), 0)
@@ -308,6 +827,40 @@ async function getRevenueTotals() {
   }
 }
 
+function groupTransactionsByPeriod(withdrawals) {
+  const yearMap = new Map()
+
+  withdrawals.forEach((withdrawal) => {
+    const createdAt = withdrawal.createdAt ? new Date(withdrawal.createdAt) : new Date()
+    const year = String(createdAt.getFullYear())
+    const monthKey = new Intl.DateTimeFormat("en-NG", {
+      month: "long",
+      year: "numeric",
+    }).format(createdAt)
+
+    if (!yearMap.has(year)) {
+      yearMap.set(year, new Map())
+    }
+
+    const monthMap = yearMap.get(year)
+    if (!monthMap.has(monthKey)) {
+      monthMap.set(monthKey, [])
+    }
+
+    monthMap.get(monthKey).push(withdrawal)
+  })
+
+  return Array.from(yearMap.entries())
+    .sort((a, b) => Number(b[0]) - Number(a[0]))
+    .map(([year, monthMap]) => ({
+      year,
+      months: Array.from(monthMap.entries()).map(([month, items]) => ({
+        month,
+        items,
+      })),
+    }))
+}
+
 async function getSessionUser(req) {
   const sessionToken = String(req.headers["x-session-token"] || "").trim()
 
@@ -316,6 +869,72 @@ async function getSessionUser(req) {
   }
 
   return User.findOne({ sessionToken })
+}
+
+async function getSessionUserByToken(sessionToken) {
+  const normalizedToken = String(sessionToken || "").trim()
+
+  if (!normalizedToken) {
+    return null
+  }
+
+  return User.findOne({ sessionToken: normalizedToken })
+}
+
+async function requireSessionUser(req, res, next) {
+  try {
+    const user = await getSessionUser(req)
+
+    if (!user) {
+      return res.status(401).json({ error: "Authentication required." })
+    }
+
+    if (user.status && user.status !== "active") {
+      return res.status(403).json({ error: "This account is not active anymore." })
+    }
+
+    req.user = user
+    return next()
+  } catch (error) {
+    console.error(error)
+    return res.status(500).json({ error: "Failed to validate user session." })
+  }
+}
+
+async function findCreatorForMonnifyEvent(eventData) {
+  const accountReference = String(eventData?.product?.reference || "").trim()
+  const destinationAccountNumber = String(
+    eventData?.destinationAccountInformation?.accountNumber || "",
+  ).trim()
+  const destinationBankCode = String(
+    eventData?.destinationAccountInformation?.bankCode || "",
+  ).trim()
+
+  if (accountReference) {
+    const matchedByReference = await User.findOne({
+      $or: [
+        { "virtualAccount.accountReference": accountReference },
+        { "virtualAccount.reservationReference": accountReference },
+      ],
+    })
+
+    if (matchedByReference) {
+      return matchedByReference
+    }
+  }
+
+  if (destinationAccountNumber) {
+    const candidates = await User.find({
+      "virtualAccount.accountNumber": destinationAccountNumber,
+      ...(destinationBankCode ? { "virtualAccount.bankCode": destinationBankCode } : {}),
+    }).limit(2)
+
+    if (candidates.length === 1) {
+      return candidates[0]
+    }
+  }
+
+  return null
 }
 
 async function requireAdminSession(req, res, next) {
@@ -342,6 +961,32 @@ async function requireAdminSession(req, res, next) {
     return res.status(500).json({ error: "Failed to validate admin session." })
   }
 }
+
+io.use(async (socket, next) => {
+  try {
+    const sessionToken = String(
+      socket.handshake.auth?.sessionToken || socket.handshake.headers["x-session-token"] || "",
+    ).trim()
+
+    if (!sessionToken) {
+      socket.data.user = null
+      return next()
+    }
+
+    const user = await getSessionUserByToken(sessionToken)
+
+    if (!user || (user.status && user.status !== "active")) {
+      socket.data.user = null
+      return next()
+    }
+
+    socket.data.user = user
+    socket.join(getCreatorRoom(user._id))
+    return next()
+  } catch (error) {
+    return next(error)
+  }
+})
 
 app.post("/auth/register", async (req, res) => {
   try {
@@ -385,21 +1030,24 @@ app.post("/auth/register", async (req, res) => {
       },
     })
 
+    let warning = ""
+
     try {
       await createReservedAccountForUser(user)
     } catch (error) {
-      await User.findByIdAndDelete(user._id)
-      return res.status(502).json({
-        error:
-          error instanceof Error
-            ? error.message
-            : "Could not provision a Monnify reserved account.",
-      })
+      const reason =
+        error instanceof Error ? error.message : "Could not provision a Monnify reserved account."
+
+      await markVirtualAccountPending(user, reason)
+      warning = isTemporaryMonnifyError(error)
+        ? "Your account was created, but Monnify is temporarily unavailable. Your virtual account is pending provisioning and can be retried later."
+        : "Your account was created, but the virtual account could not be provisioned yet. It has been marked as pending so you can continue into the dashboard."
     }
 
     return res.json({
       user: sanitizeUser(user),
       sessionToken: user.sessionToken,
+      warning,
     })
   } catch (error) {
     console.error(error)
@@ -447,6 +1095,64 @@ app.post("/auth/login", async (req, res) => {
   } catch (error) {
     console.error(error)
     return res.status(500).json({ error: "Failed to log in." })
+  }
+})
+
+app.post("/auth/oauth/google", async (req, res) => {
+  try {
+    const credential = String(req.body?.credential || "").trim()
+
+    if (!credential) {
+      return res.status(400).json({ error: "Google credential is required." })
+    }
+
+    const identity = await verifyGoogleIdToken(credential)
+    const user = await createOrLoginOAuthUser({
+      provider: "google",
+      sub: identity.sub,
+      email: identity.email,
+      name: identity.name,
+      picture: identity.picture,
+    })
+
+    return res.json({
+      user: sanitizeUser(user),
+      sessionToken: user.sessionToken,
+    })
+  } catch (error) {
+    console.error(error)
+    return res.status(400).json({
+      error: error instanceof Error ? error.message : "Google sign-in failed.",
+    })
+  }
+})
+
+app.post("/auth/oauth/apple", async (req, res) => {
+  try {
+    const identityToken = String(req.body?.identityToken || "").trim()
+
+    if (!identityToken) {
+      return res.status(400).json({ error: "Apple identity token is required." })
+    }
+
+    const identity = await verifyAppleIdentityToken(identityToken)
+    const user = await createOrLoginOAuthUser({
+      provider: "apple",
+      sub: identity.sub,
+      email: identity.email,
+      name: identity.name,
+      picture: identity.picture,
+    })
+
+    return res.json({
+      user: sanitizeUser(user),
+      sessionToken: user.sessionToken,
+    })
+  } catch (error) {
+    console.error(error)
+    return res.status(400).json({
+      error: error instanceof Error ? error.message : "Apple sign-in failed.",
+    })
   }
 })
 
@@ -568,8 +1274,12 @@ app.post("/admin/auth/logout", requireAdminSession, async (req, res) => {
   }
 })
 
-app.post("/users/:id/virtual-account", async (req, res) => {
+app.post("/users/:id/virtual-account", requireSessionUser, async (req, res) => {
   try {
+    if (String(req.user._id) !== String(req.params.id)) {
+      return res.status(403).json({ error: "You can only provision a virtual account for your own user." })
+    }
+
     const user = await User.findById(req.params.id)
 
     if (!user) {
@@ -590,37 +1300,150 @@ app.post("/users/:id/virtual-account", async (req, res) => {
 })
 
 app.post("/webhook/monnify", async (req, res) => {
-  const data = req.body
-  const sender = data.sender || data.payerName || "Anonymous"
-  const split = calculateRevenueSplit(data.amount || data.amountPaid || 0)
+  try {
+    if (!verifyMonnifySignature(req)) {
+      await createAuditLog({
+        actorType: "system",
+        eventType: "webhook.monnify.invalid_signature",
+        message: "Rejected Monnify webhook with invalid signature.",
+        metadata: {
+          ip: req.ip,
+        },
+      })
 
-  const donation = await Donation.create({
-    sender,
-    amount: split.gross,
-    platformFee: split.platformFee,
-    creatorShare: split.creatorShare,
-  })
+      return res.status(401).json({ error: "Invalid Monnify signature." })
+    }
 
-  io.emit("newDonation", donation)
+    const data = req.body || {}
+    const eventData =
+      (data.eventData && typeof data.eventData === "object" ? data.eventData : data.responseBody) ||
+      data
+    const creator = await findCreatorForMonnifyEvent(eventData)
+    const eventType = String(data.eventType || eventData.eventType || "monnify.webhook")
+    const paymentStatus = String(
+      eventData.paymentStatus || eventData.status || data.paymentStatus || "PENDING",
+    ).toUpperCase()
+    const transactionReference = String(
+      eventData.transactionReference || eventData.transactionRef || "",
+    ).trim()
+    const paymentReference = String(
+      eventData.paymentReference || eventData.transactionHash || "",
+    ).trim()
 
-  await createAuditLog({
-    actorType: "system",
-    eventType: "donation.received",
-    message: `Donation received from ${sender}.`,
-    metadata: {
+    if (paymentStatus && paymentStatus !== "PAID") {
+      await createAuditLog({
+        actorType: "system",
+        eventType: "webhook.monnify.ignored",
+        message: `Ignored Monnify webhook with payment status ${paymentStatus}.`,
+        metadata: {
+          eventType,
+          paymentStatus,
+          transactionReference,
+          paymentReference,
+        },
+      })
+
+      return res.sendStatus(200)
+    }
+
+    if (transactionReference) {
+      const existingByTransactionRef = await Donation.findOne({
+        monnifyTransactionReference: transactionReference,
+      })
+
+      if (existingByTransactionRef) {
+        return res.sendStatus(200)
+      }
+    }
+
+    if (paymentReference) {
+      const existingByPaymentRef = await Donation.findOne({
+        monnifyPaymentReference: paymentReference,
+      })
+
+      if (existingByPaymentRef) {
+        return res.sendStatus(200)
+      }
+    }
+
+    const sender =
+      eventData.payerName ||
+      eventData.customer?.name ||
+      eventData.customerName ||
+      eventData.paymentSourceInformation?.accountName ||
+      data.sender ||
+      data.payerName ||
+      "Anonymous"
+    const destinationAccountNumber = String(
+      eventData.destinationAccountInformation?.accountNumber || "",
+    ).trim()
+    const destinationBankName = String(
+      eventData.destinationAccountInformation?.bankName || "",
+    ).trim()
+    const split = calculateRevenueSplit(
+      eventData.paidOn ? eventData.amountPaid : eventData.amountPaid || data.amount || data.amountPaid || 0,
+    )
+
+    if (!creator) {
+      await createAuditLog({
+        actorType: "system",
+        eventType: "webhook.monnify.unmatched_creator",
+        message: "Monnify webhook could not be matched to a registered creator.",
+        metadata: {
+          eventType,
+          destinationAccountNumber,
+          transactionReference,
+          paymentReference,
+          accountReference: String(eventData?.product?.reference || ""),
+        },
+      })
+
+      return res.sendStatus(200)
+    }
+
+    const donation = await Donation.create({
+      creatorId: creator._id,
+      creatorEmail: creator.email,
       sender,
       amount: split.gross,
       platformFee: split.platformFee,
       creatorShare: split.creatorShare,
-    },
-  })
+      eventType,
+      paymentStatus,
+      destinationAccountNumber: destinationAccountNumber || undefined,
+      destinationBankName: destinationBankName || undefined,
+      monnifyTransactionReference: transactionReference || undefined,
+      monnifyPaymentReference: paymentReference || undefined,
+    })
 
-  res.sendStatus(200)
+    io.to(getCreatorRoom(creator._id)).emit("newDonation", donation)
+
+    await createAuditLog({
+      actorType: "system",
+      eventType: "donation.received",
+      message: `Donation received from ${sender}.`,
+      metadata: {
+        sender,
+        amount: split.gross,
+        platformFee: split.platformFee,
+        creatorShare: split.creatorShare,
+        creatorId: creator._id.toString(),
+        paymentStatus,
+        transactionReference,
+        paymentReference,
+      },
+    })
+
+    return res.sendStatus(200)
+  } catch (error) {
+    console.error(error)
+    return res.status(500).json({ error: "Failed to process Monnify webhook." })
+  }
 })
 
-app.get("/payouts", async (req, res) => {
+app.get("/payouts", requireSessionUser, async (req, res) => {
   try {
-    const payouts = await Payout.find().sort({ createdAt: -1 })
+    const payouts = await Payout.find({ creatorId: req.user._id }).sort({ createdAt: -1 })
     res.json(payouts)
   } catch (error) {
     console.error(error)
@@ -628,28 +1451,47 @@ app.get("/payouts", async (req, res) => {
   }
 })
 
-app.post("/payouts", async (req, res) => {
+app.get("/banks", requireSessionUser, async (_req, res) => {
   try {
-    const { amount, bankName, accountNumber } = req.body
+    const banks = await getSupportedBanks()
+    res.json({ banks })
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ error: "Failed to load supported banks." })
+  }
+})
+
+app.post("/bank-account-name-enquiry", requireSessionUser, async (req, res) => {
+  try {
+    const accountNumber = String(req.body?.accountNumber || "").trim()
+    const bankCode = String(req.body?.bankCode || "").trim()
+
+    if (!bankCode || !accountNumber) {
+      return res.status(400).json({ error: "Bank code and account number are required." })
+    }
+
+    if (accountNumber.length !== 10) {
+      return res.status(400).json({ error: "Account number must be 10 digits." })
+    }
+
+    const result = await resolveBankAccountName({ bankCode, accountNumber })
+    res.json(result)
+  } catch (error) {
+    console.error(error)
+    res.status(400).json({
+      error:
+        error instanceof Error ? error.message : "Could not resolve the account name for that bank account.",
+    })
+  }
+})
+
+app.post("/payouts", requireSessionUser, async (req, res) => {
+  try {
+    const { amount, bankName, bankCode = "", accountNumber, accountName = "" } = req.body
     const payoutAmount = Number(amount) || 0
 
-    const donations = await Donation.find()
-    const creatorRevenue = donations.reduce((sum, donation) => {
-      if (typeof donation.creatorShare === "number") {
-        return sum + donation.creatorShare
-      }
-
-      return sum + calculateRevenueSplit(donation.amount).creatorShare
-    }, 0)
-
-    const existingPayouts = await Payout.find({
-      status: { $ne: "failed" },
-    })
-    const withdrawnTotal = existingPayouts.reduce(
-      (sum, payout) => sum + (Number(payout.amount) || 0),
-      0,
-    )
-    const availableCreatorBalance = Math.max(0, creatorRevenue - withdrawnTotal)
+    const creatorTotals = await getRevenueTotals({ creatorId: req.user._id })
+    const availableCreatorBalance = creatorTotals.creatorAvailableBalance
 
     if (!payoutAmount || payoutAmount <= 0) {
       return res.status(400).json({ error: "Enter a valid payout amount." })
@@ -659,27 +1501,71 @@ app.post("/payouts", async (req, res) => {
       return res.status(400).json({
         error: "Creators can only withdraw up to their 80% share of earnings.",
         availableCreatorBalance,
-        creatorRevenue,
-        platformRevenue: donations.reduce((sum, donation) => {
-          if (typeof donation.platformFee === "number") {
-            return sum + donation.platformFee
-          }
-
-          return sum + calculateRevenueSplit(donation.amount).platformFee
-        }, 0),
+        creatorRevenue: creatorTotals.creatorRevenue,
+        platformRevenue: creatorTotals.platformRevenue,
       })
     }
 
+    if (!bankName || !accountNumber || !accountName) {
+      return res.status(400).json({
+        error: "Bank name, account number, and account name are required.",
+      })
+    }
+
+    if (!bankCode) {
+      return res.status(400).json({
+        error: "Bank code is required for live disbursement.",
+      })
+    }
+
+    const transferReference = createTransferReference()
+    let transferResponse
+
+    try {
+      transferResponse = await initiateMonnifyDisbursement({
+        amount: payoutAmount,
+        bankCode,
+        accountNumber,
+        accountName,
+        narration: `StreamTip creator payout for ${req.user.name}`,
+        reference: transferReference,
+      })
+    } catch (error) {
+      const message = getAxiosErrorMessage(error, "Failed to initiate payout with Monnify.")
+      return res.status(502).json({ error: message })
+    }
+
+    const providerStatus =
+      transferResponse.status ||
+      transferResponse.paymentStatus ||
+      transferResponse.transactionStatus ||
+      ""
+    const payoutStatus = normalizeMonnifyTransferStatus(providerStatus)
+
     const payout = await Payout.create({
+      creatorId: req.user._id,
       amount: payoutAmount,
       bankName,
+      bankCode,
       accountNumber,
-      status: "completed",
+      accountName,
+      status: payoutStatus,
+      transferReference,
+      providerReference:
+        String(
+          transferResponse.transactionReference ||
+            transferResponse.reference ||
+            transferResponse.paymentReference ||
+            transferReference,
+        ).trim() || transferReference,
+      providerMessage: String(
+        transferResponse.message || transferResponse.responseMessage || providerStatus || "",
+      ).trim(),
       createdAt: new Date(),
-      completedAt: new Date(),
+      completedAt: payoutStatus === "completed" ? new Date() : undefined,
     })
 
-    io.emit("newPayout", payout)
+    io.to(getCreatorRoom(req.user._id)).emit("newPayout", payout)
 
     await createAuditLog({
       actorType: "system",
@@ -688,7 +1574,13 @@ app.post("/payouts", async (req, res) => {
       metadata: {
         amount: payoutAmount,
         bankName,
+        bankCode,
         accountNumber: String(accountNumber).slice(-4),
+        accountName,
+        creatorId: req.user._id.toString(),
+        transferReference,
+        providerReference: payout.providerReference || "",
+        providerStatus: payout.status,
       },
     })
 
@@ -699,36 +1591,29 @@ app.post("/payouts", async (req, res) => {
   }
 })
 
-app.get("/donations", async (req, res) => {
-  const donations = await Donation.find().sort({ date: -1 })
+app.get("/donations", requireSessionUser, async (req, res) => {
+  const donations = await Donation.find({ creatorId: req.user._id }).sort({ date: -1 })
   res.json(donations)
 })
 
-app.get("/user", async (req, res) => {
+app.get("/user", requireSessionUser, async (req, res) => {
   try {
-    const user = (await getSessionUser(req)) || (await getCurrentUser())
-
-    if (!user) {
-      return res.status(404).json({ error: "No registered user found." })
-    }
-
-    res.json(sanitizeUser(user))
+    res.json(sanitizeUser(req.user))
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: "Failed to fetch user." })
   }
 })
 
-app.put("/user", async (req, res) => {
+app.put("/user", requireSessionUser, async (req, res) => {
   try {
-    const user = (await getSessionUser(req)) || (await getCurrentUser())
-
-    if (!user) {
-      return res.status(404).json({ error: "No registered user found." })
-    }
+    const user = req.user
 
     const nextName = String(req.body?.name || "").trim()
     const nextEmail = String(req.body?.email || "").toLowerCase().trim()
+    const nextProfileImage = String(req.body?.profileImage || "").trim()
+    const currentPassword = String(req.body?.currentPassword || "")
+    const newPassword = String(req.body?.newPassword || "")
 
     if (!nextName || !nextEmail) {
       return res.status(400).json({ error: "Name and email are required." })
@@ -745,9 +1630,23 @@ app.put("/user", async (req, res) => {
 
     user.name = nextName
     user.email = nextEmail
+    user.profileImage = nextProfileImage
 
     if (user.virtualAccount) {
       user.virtualAccount.accountName = user.virtualAccount.accountName || `StreamTip/${nextName}`
+    }
+
+    if (newPassword) {
+      if (newPassword.length < 8) {
+        return res.status(400).json({ error: "New password must be at least 8 characters long." })
+      }
+
+      if (!currentPassword || !verifyPassword(currentPassword, user.passwordHash)) {
+        return res.status(400).json({ error: "Current password is incorrect." })
+      }
+
+      user.passwordHash = hashPassword(newPassword)
+      user.sessionToken = generateSessionToken()
     }
 
     await user.save()
@@ -833,6 +1732,38 @@ app.get("/admin/users", requireAdminSession, async (req, res) => {
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: "Failed to load users." })
+  }
+})
+
+app.delete("/admin/users/:id", requireAdminSession, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id)
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found." })
+    }
+
+    await Promise.all([
+      Donation.deleteMany({ creatorId: user._id }),
+      Payout.deleteMany({ creatorId: user._id }),
+      User.deleteOne({ _id: user._id }),
+    ])
+
+    await createAuditLog({
+      actorType: "admin",
+      actorId: req.adminSession._id.toString(),
+      eventType: "admin.user.deleted",
+      message: `Admin deleted ${user.email}.`,
+      metadata: {
+        userId: user._id.toString(),
+        email: user.email,
+      },
+    })
+
+    res.json({ success: true })
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ error: "Failed to delete user." })
   }
 })
 
@@ -996,6 +1927,40 @@ app.post("/admin/users/:id/virtual-account", requireAdminSession, async (req, re
   }
 })
 
+app.get("/admin/banks", requireAdminSession, async (_req, res) => {
+  try {
+    const banks = await getSupportedBanks()
+    res.json({ banks })
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ error: "Failed to load supported banks." })
+  }
+})
+
+app.post("/admin/bank-account-name-enquiry", requireAdminSession, async (req, res) => {
+  try {
+    const accountNumber = String(req.body?.accountNumber || "").trim()
+    const bankCode = String(req.body?.bankCode || "").trim()
+
+    if (!bankCode || !accountNumber) {
+      return res.status(400).json({ error: "Bank code and account number are required." })
+    }
+
+    if (accountNumber.length !== 10) {
+      return res.status(400).json({ error: "Account number must be 10 digits." })
+    }
+
+    const result = await resolveBankAccountName({ bankCode, accountNumber })
+    res.json(result)
+  } catch (error) {
+    console.error(error)
+    res.status(400).json({
+      error:
+        error instanceof Error ? error.message : "Could not resolve the account name for that bank account.",
+    })
+  }
+})
+
 app.get("/admin/platform-withdrawals", requireAdminSession, async (req, res) => {
   try {
     const [withdrawals, totals] = await Promise.all([
@@ -1005,6 +1970,7 @@ app.get("/admin/platform-withdrawals", requireAdminSession, async (req, res) => 
 
     res.json({
       withdrawals,
+      history: groupTransactionsByPeriod(withdrawals),
       balance: {
         platformRevenue: totals.platformRevenue,
         totalPlatformWithdrawn: totals.totalPlatformWithdrawn,
@@ -1019,7 +1985,7 @@ app.get("/admin/platform-withdrawals", requireAdminSession, async (req, res) => 
 
 app.post("/admin/platform-withdrawals", requireAdminSession, async (req, res) => {
   try {
-    const { amount, bankName, accountNumber, accountName, note = "" } = req.body || {}
+    const { amount, bankName, bankCode = "", accountNumber, accountName, note = "" } = req.body || {}
     const withdrawalAmount = Number(amount) || 0
     const totals = await getRevenueTotals()
 
@@ -1033,6 +1999,12 @@ app.post("/admin/platform-withdrawals", requireAdminSession, async (req, res) =>
       })
     }
 
+    if (!bankCode) {
+      return res.status(400).json({
+        error: "Bank code is required for live disbursement.",
+      })
+    }
+
     if (withdrawalAmount > totals.pendingPlatformRevenue) {
       return res.status(400).json({
         error: "You can only withdraw from the available platform 20% balance.",
@@ -1040,15 +2012,51 @@ app.post("/admin/platform-withdrawals", requireAdminSession, async (req, res) =>
       })
     }
 
+    const transferReference = createTransferReference("STIP-PLATFORM")
+    let transferResponse
+
+    try {
+      transferResponse = await initiateMonnifyDisbursement({
+        amount: withdrawalAmount,
+        bankCode,
+        accountNumber,
+        accountName,
+        narration: "StreamTip platform revenue withdrawal",
+        reference: transferReference,
+      })
+    } catch (error) {
+      const message = getAxiosErrorMessage(error, "Failed to initiate platform withdrawal with Monnify.")
+      return res.status(502).json({ error: message })
+    }
+
+    const providerStatus =
+      transferResponse.status ||
+      transferResponse.paymentStatus ||
+      transferResponse.transactionStatus ||
+      ""
+    const withdrawalStatus = normalizeMonnifyTransferStatus(providerStatus)
+
     const withdrawal = await PlatformWithdrawal.create({
       amount: withdrawalAmount,
       bankName: String(bankName).trim(),
+      bankCode: String(bankCode).trim(),
       accountNumber: String(accountNumber).trim(),
       accountName: String(accountName).trim(),
       note: String(note || "").trim(),
-      status: "completed",
+      status: withdrawalStatus,
+      transferReference,
+      providerReference:
+        String(
+          transferResponse.transactionReference ||
+            transferResponse.reference ||
+            transferResponse.paymentReference ||
+            transferReference,
+        ).trim() || transferReference,
+      providerMessage: String(
+        transferResponse.message || transferResponse.responseMessage || providerStatus || "",
+      ).trim(),
       createdAt: new Date(),
-      completedAt: new Date(),
+      completedAt: withdrawalStatus === "completed" ? new Date() : undefined,
     })
 
     await createAuditLog({
@@ -1059,11 +2067,25 @@ app.post("/admin/platform-withdrawals", requireAdminSession, async (req, res) =>
       metadata: {
         amount: withdrawalAmount,
         bankName: withdrawal.bankName,
+        bankCode: withdrawal.bankCode || "",
         accountNumber: withdrawal.accountNumber.slice(-4),
+        accountName: withdrawal.accountName,
+        transferReference,
+        providerReference: withdrawal.providerReference || "",
+        providerStatus: withdrawal.status,
       },
     })
 
-    res.status(201).json({ withdrawal })
+    const refreshedTotals = await getRevenueTotals()
+
+    res.status(201).json({
+      withdrawal,
+      balance: {
+        platformRevenue: refreshedTotals.platformRevenue,
+        totalPlatformWithdrawn: refreshedTotals.totalPlatformWithdrawn,
+        pendingPlatformRevenue: refreshedTotals.pendingPlatformRevenue,
+      },
+    })
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: "Failed to create platform withdrawal." })

@@ -288,6 +288,22 @@ export function OverlaySceneEditor({
               </div>
             ) : null}
 
+            {customization.showAccountDetails ? (
+              <div
+                className={cn("absolute w-[30%] rounded-2xl border border-white/14 px-4 py-4 text-white shadow-[0_0_30px_rgba(0,0,0,0.18)]", getAnchorClass(customization.accountPosition.anchor))}
+                style={{
+                  ...gradientStyle(customization.accountGradient),
+                  opacity: customization.accountOpacity,
+                  transform: `translate(${customization.accountPosition.offsetX}px, ${customization.accountPosition.offsetY}px)`,
+                }}
+              >
+                <p className="text-xs uppercase tracking-[0.24em] text-white/70">Virtual Account</p>
+                <p className="mt-2 text-lg font-bold">StreamTip Creator</p>
+                <p className="mt-1 font-mono text-xl">1023456789</p>
+                <p className="mt-1 text-sm text-white/85">Moniepoint MFB</p>
+              </div>
+            ) : null}
+
             <div
               className={cn("absolute w-[34%] rounded-[28px] border border-white/16 px-5 py-6 text-center text-white shadow-[0_0_40px_rgba(0,0,0,0.18)]", getAnchorClass(customization.alertPosition.anchor))}
               style={{
@@ -337,6 +353,11 @@ export function OverlaySceneEditor({
                   key: "showAmbientScene" as const,
                   label: "Ambient Stage Effects",
                   description: "Keep soft background glows and motion even before alerts appear.",
+                },
+                {
+                  key: "showAccountDetails" as const,
+                  label: "Show Account Details",
+                  description: "Display your virtual account details on stream when you want viewers to fund directly.",
                 },
               ].map((item) => (
                 <div
@@ -413,9 +434,25 @@ export function OverlaySceneEditor({
               })
             }
           />
+          <PlacementCard
+            title="Account Panel Position"
+            position={customization.accountPosition}
+            onAnchorChange={(anchor) =>
+              updateCustomization("accountPosition", {
+                ...customization.accountPosition,
+                anchor,
+              })
+            }
+            onOffsetChange={(axis, value) =>
+              updateCustomization("accountPosition", {
+                ...customization.accountPosition,
+                [axis]: value,
+              })
+            }
+          />
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-3">
+        <div className="grid gap-4 lg:grid-cols-4">
           <GradientEditor
             label="Goal Gradient"
             gradient={customization.goalGradient}
@@ -437,6 +474,16 @@ export function OverlaySceneEditor({
             }
           />
           <GradientEditor
+            label="Account Panel Gradient"
+            gradient={customization.accountGradient}
+            onChange={(key, value) =>
+              updateCustomization("accountGradient", {
+                ...customization.accountGradient,
+                [key]: value,
+              })
+            }
+          />
+          <GradientEditor
             label="Gift Alert Gradient"
             gradient={customization.alertGradient}
             onChange={(key, value) =>
@@ -448,7 +495,7 @@ export function OverlaySceneEditor({
           />
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-4 lg:grid-cols-3">
           <OpacityCard
             title="Live Goal Opacity"
             value={customization.goalOpacity}
@@ -458,6 +505,11 @@ export function OverlaySceneEditor({
             title="Leaderboard Opacity"
             value={customization.leaderboardOpacity}
             onChange={(value) => updateCustomization("leaderboardOpacity", value)}
+          />
+          <OpacityCard
+            title="Account Panel Opacity"
+            value={customization.accountOpacity}
+            onChange={(value) => updateCustomization("accountOpacity", value)}
           />
         </div>
       </div>
