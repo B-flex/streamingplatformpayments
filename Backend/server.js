@@ -181,6 +181,10 @@ function isMonnifyConfigured() {
   return Boolean(MONNIFY_API_KEY && MONNIFY_SECRET_KEY && MONNIFY_CONTRACT_CODE)
 }
 
+function isMonnifySandbox() {
+  return String(MONNIFY_BASE_URL || "").toLowerCase().includes("sandbox.monnify.com")
+}
+
 function sanitizeUser(user) {
   if (!user) return null
 
@@ -1438,6 +1442,70 @@ app.post("/webhook/monnify", async (req, res) => {
   } catch (error) {
     console.error(error)
     return res.status(500).json({ error: "Failed to process Monnify webhook." })
+  }
+})
+
+app.post("/monnify/test-donation", requireSessionUser, async (req, res) => {
+  try {
+    if (!isMonnifySandbox()) {
+      return res.status(403).json({
+        error: "Test donations are only available while Monnify is set to sandbox mode.",
+      })
+    }
+
+    if (!req.user.virtualAccount?.accountNumber || req.user.virtualAccount.status !== "active") {
+      return res.status(400).json({
+        error: "This creator does not have an active Monnify virtual account yet.",
+      })
+    }
+
+    const amount = Number(req.body?.amount) || 0
+    const sender = String(req.body?.sender || "Monnify Sandbox Tester").trim() || "Monnify Sandbox Tester"
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ error: "Enter a valid test donation amount." })
+    }
+
+    const split = calculateRevenueSplit(amount)
+    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1_000_000)}`
+    const donation = await Donation.create({
+      creatorId: req.user._id,
+      creatorEmail: req.user.email,
+      sender,
+      amount: split.gross,
+      platformFee: split.platformFee,
+      creatorShare: split.creatorShare,
+      eventType: "monnify.test_api",
+      paymentStatus: "PAID",
+      destinationAccountNumber: req.user.virtualAccount.accountNumber,
+      destinationBankName: req.user.virtualAccount.bankName || "Monnify",
+      monnifyTransactionReference: `TEST-TXN-${uniqueSuffix}`,
+      monnifyPaymentReference: `TEST-PAY-${uniqueSuffix}`,
+      date: new Date(),
+    })
+
+    io.to(getCreatorRoom(req.user._id)).emit("newDonation", donation)
+
+    await createAuditLog({
+      actorType: "user",
+      actorId: req.user._id.toString(),
+      eventType: "monnify.test_donation.created",
+      message: `${req.user.email} triggered a Monnify sandbox donation test.`,
+      metadata: {
+        amount: split.gross,
+        sender,
+        destinationAccountNumber: req.user.virtualAccount.accountNumber,
+      },
+    })
+
+    return res.status(201).json({
+      donation,
+      mode: "sandbox",
+      message: "Sandbox donation created successfully.",
+    })
+  } catch (error) {
+    console.error(error)
+    return res.status(500).json({ error: "Failed to create Monnify sandbox donation." })
   }
 })
 

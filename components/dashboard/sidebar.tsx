@@ -18,6 +18,7 @@ import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useState } from "react"
 import { useAuth } from "@/app/context/AuthContext"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
 interface NavItem {
   label: string
@@ -89,8 +90,18 @@ export function DashboardSidebar() {
       <div className="p-3 border-t border-zinc-800 space-y-1">
         {!collapsed && user ? (
           <div className="rounded-lg border border-zinc-800 bg-zinc-900/80 px-3 py-3 text-sm text-zinc-400">
-            <p className="font-medium text-white truncate">{user.name}</p>
-            <p className="truncate text-xs text-zinc-500">{user.email}</p>
+            <div className="flex items-center gap-3">
+              <Avatar className="h-11 w-11 border border-zinc-700">
+                <AvatarImage src={user.profileImage || ""} alt={user.name} className="object-cover" />
+                <AvatarFallback className="bg-gradient-to-br from-purple-500 to-pink-500 text-white">
+                  {user.name.slice(0, 1).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0">
+                <p className="font-medium text-white truncate">{user.name}</p>
+                <p className="truncate text-xs text-zinc-500">{user.email}</p>
+              </div>
+            </div>
           </div>
         ) : null}
 

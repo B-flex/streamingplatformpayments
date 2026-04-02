@@ -16,6 +16,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/app/context/AuthContext"
+import { authRequest } from "@/lib/auth-client"
 
 const fallbackAccount = {
   accountName: "No virtual account yet",
@@ -26,7 +27,51 @@ const fallbackAccount = {
 
 export default function VirtualAccountPage() {
   const [copiedField, setCopiedField] = useState<string | null>(null)
+  const [testSender, setTestSender] = useState("Monnify Sandbox Tester")
+  const [testAmount, setTestAmount] = useState("1500")
+  const [isTestingDonation, setIsTestingDonation] = useState(false)
+  const [testFeedback, setTestFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null)
   const { user } = useAuth()
+  const isSandboxAccount = user?.virtualAccount?.provider === "monnify"
+
+  const runSandboxDonationTest = async () => {
+    setIsTestingDonation(true)
+    setTestFeedback(null)
+
+    try {
+      const response = await authRequest("/monnify/test-donation", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sender: testSender.trim() || "Monnify Sandbox Tester",
+          amount: Number(testAmount) || 0,
+        }),
+      })
+
+      const payload = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not create a Monnify sandbox donation.")
+      }
+
+      setTestFeedback({
+        type: "success",
+        message: "Test donation sent. Check your donations page and overlay now.",
+      })
+    } catch (error) {
+      setTestFeedback({
+        type: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Could not create a Monnify sandbox donation.",
+      })
+    } finally {
+      setIsTestingDonation(false)
+    }
+  }
 
   const accountData = user?.virtualAccount || fallbackAccount
 
@@ -302,6 +347,71 @@ export default function VirtualAccountPage() {
           </div>
         </div>
       </div>
+
+      {isSandboxAccount ? (
+        <div className="bg-gradient-to-br from-zinc-900 to-zinc-950 border border-zinc-800 rounded-xl overflow-hidden">
+          <div className="px-6 py-5 border-b border-zinc-800 flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20">
+              <Zap className="h-5 w-5 text-purple-400" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-white">Monnify Sandbox Donation Test</h2>
+              <p className="text-sm text-zinc-500">Create a safe test donation for this creator account.</p>
+            </div>
+          </div>
+
+          <div className="p-6 space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-zinc-300">Test sender name</label>
+                <input
+                  value={testSender}
+                  onChange={(event) => setTestSender(event.target.value)}
+                  className="w-full h-11 rounded-xl border border-zinc-800 bg-zinc-900 px-4 text-white outline-none transition-colors focus:border-purple-500"
+                  placeholder="Monnify Sandbox Tester"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-zinc-300">Test amount (NGN)</label>
+                <input
+                  value={testAmount}
+                  onChange={(event) => setTestAmount(event.target.value)}
+                  type="number"
+                  min="1"
+                  className="w-full h-11 rounded-xl border border-zinc-800 bg-zinc-900 px-4 text-white outline-none transition-colors focus:border-purple-500"
+                  placeholder="1500"
+                />
+              </div>
+            </div>
+
+            <p className="text-sm text-zinc-500">
+              This uses StreamTip&apos;s sandbox donation endpoint so you can verify dashboard totals, donations, alerts, and OBS overlay behavior while your Monnify account is still in test mode.
+            </p>
+
+            {testFeedback ? (
+              <div
+                className={cn(
+                  "rounded-xl border px-4 py-3 text-sm",
+                  testFeedback.type === "success"
+                    ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-200"
+                    : "border-red-500/20 bg-red-500/10 text-red-200",
+                )}
+              >
+                {testFeedback.message}
+              </div>
+            ) : null}
+
+            <button
+              onClick={runSandboxDonationTest}
+              disabled={isTestingDonation}
+              className="inline-flex h-11 items-center justify-center rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isTestingDonation ? "Sending test donation..." : "Run Monnify test donation"}
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

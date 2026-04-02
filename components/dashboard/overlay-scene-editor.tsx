@@ -20,27 +20,27 @@ const platformPreviews: Array<{
 }> = [
   {
     id: "tiktok",
-    label: "TikTok Live",
+    label: "Vertical Live Layout",
     chrome: "from-pink-500/20 via-black to-cyan-500/20",
-    description: "Tall live style with busy corners and compact safe zones.",
+    description: "Vertical-first preview with compact safe zones and stacked stream elements.",
   },
   {
     id: "twitch",
-    label: "Twitch",
+    label: "Wide Chat Layout",
     chrome: "from-violet-500/20 via-black to-indigo-500/20",
-    description: "Wide chat-heavy layout with room for a stronger side panel.",
+    description: "Wide preview with space for side content and community panels.",
   },
   {
     id: "youtube",
-    label: "YouTube",
+    label: "Video Platform Layout",
     chrome: "from-rose-500/20 via-black to-orange-400/20",
-    description: "Balanced preview for standard long-form live streaming.",
+    description: "Balanced widescreen preview for long-form livestream viewing.",
   },
   {
     id: "kick",
-    label: "Kick",
+    label: "High Contrast Layout",
     chrome: "from-emerald-500/20 via-black to-lime-500/20",
-    description: "High-contrast scene that still leaves space for gifts and goal.",
+    description: "Bold, high-contrast preview with room for gifts, goals, and ranking panels.",
   },
 ]
 

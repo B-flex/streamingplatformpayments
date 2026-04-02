@@ -61,6 +61,9 @@ export default function HomePage() {
             <Link href="/terms" className="transition-colors hover:text-white">
               Terms
             </Link>
+            <Link href="/privacy" className="transition-colors hover:text-white">
+              Privacy
+            </Link>
             <Link href="/overlay" className="transition-colors hover:text-white">
               Overlay Demo
             </Link>
@@ -81,7 +84,7 @@ export default function HomePage() {
           <div className="space-y-7">
             <div className="inline-flex items-center gap-2 rounded-full border border-purple-400/20 bg-purple-400/10 px-4 py-2 text-sm text-purple-100">
               <Globe2 className="h-4 w-4" />
-              Built for TikTok Live, Twitch, YouTube, and modern creator streams
+              Designed for browser-source livestream workflows used by creators across TikTok LIVE, Twitch, YouTube, and similar platforms
             </div>
 
             <div className="space-y-5">
@@ -90,6 +93,9 @@ export default function HomePage() {
               </h1>
               <p className="max-w-2xl text-lg leading-8 text-white/70">
                 StreamTip gives creators donation infrastructure, transparent live overlays, notification controls, goals, gifter leaderboards, and payout tracking in one professional workflow. Supporters send money, your stream reacts instantly, and your dashboard keeps the business side organized.
+              </p>
+              <p className="max-w-2xl text-sm leading-7 text-white/50">
+                StreamTip is an independent creator tool and is not affiliated with, endorsed by, or sponsored by TikTok or ByteDance. Creators remain responsible for following the rules of any platform they stream on.
               </p>
             </div>
 
@@ -226,6 +232,9 @@ export default function HomePage() {
               <p>
                 You should review the full terms before signing up. The same 20% revenue share is stated again in our terms and conditions so creators understand the commercial model before using the service.
               </p>
+              <p>
+                StreamTip does not replace the platform rules of TikTok or any other livestreaming service. Creators must comply with community guidelines, branded content disclosure rules, intellectual property rules, and any platform-specific monetization requirements that apply to their content.
+              </p>
             </div>
 
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
@@ -237,12 +246,26 @@ export default function HomePage() {
                   Read terms and conditions
                 </Button>
               </Link>
+              <Link href="/privacy">
+                <Button
+                  variant="outline"
+                  className="border-zinc-700 bg-zinc-900/80 text-white hover:bg-zinc-800"
+                >
+                  Read privacy policy
+                </Button>
+              </Link>
               <Link href="/register">
                 <Button className="bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:opacity-90">
                   Start as creator
                 </Button>
               </Link>
             </div>
+          </div>
+        </section>
+
+        <section className="mx-auto max-w-7xl px-6 pb-16">
+          <div className="rounded-[28px] border border-amber-400/15 bg-amber-400/10 p-6 text-sm leading-7 text-amber-50/90">
+            Compliance note: StreamTip is built as an independent donation and overlay utility. It does not grant users permission to violate platform rules, impersonate TikTok or any other service, use protected logos without authorization, scrape platform data, or mislead supporters into believing StreamTip is an official platform feature.
           </div>
         </section>
       </main>

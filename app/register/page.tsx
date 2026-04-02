@@ -248,6 +248,22 @@ export default function RegisterPage() {
           </div>
         </div>
       </div>
+
+      <div className="mx-auto mt-8 max-w-5xl rounded-[24px] border border-white/10 bg-white/5 px-6 py-4 text-sm text-white/55 backdrop-blur-xl">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p>
+            StreamTip is an independent creator tool and is not affiliated with TikTok or ByteDance.
+          </p>
+          <div className="flex items-center gap-4">
+            <Link href="/terms" className="transition-colors hover:text-white">
+              Terms
+            </Link>
+            <Link href="/privacy" className="transition-colors hover:text-white">
+              Privacy
+            </Link>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

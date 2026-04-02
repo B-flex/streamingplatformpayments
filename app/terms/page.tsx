@@ -32,6 +32,26 @@ const sections = [
     body:
       "Users may not use StreamTip for fraud, unlawful fundraising, impersonation, abusive conduct, or any activity that puts the platform, payment providers, or supporters at risk.",
   },
+  {
+    title: "Platform compliance and creator responsibility",
+    body:
+      "Creators remain solely responsible for complying with the rules, community guidelines, monetization rules, branded content disclosure rules, and intellectual property rules of any platform they stream on, including TikTok if they choose to use StreamTip alongside TikTok LIVE or related services.",
+  },
+  {
+    title: "No affiliation with TikTok",
+    body:
+      "StreamTip is an independent creator utility and is not affiliated with, endorsed by, sponsored by, or operated by TikTok or ByteDance. References to TikTok or other third-party platforms are descriptive only and do not imply any partnership, approval, or official integration unless expressly stated in writing by StreamTip.",
+  },
+  {
+    title: "Branding, trademarks, and misrepresentation",
+    body:
+      "Users may not use StreamTip to impersonate TikTok, ByteDance, or any other platform, or to suggest that StreamTip is an official platform product. Users are responsible for ensuring that their stream titles, descriptions, overlays, logos, and promotional materials do not misuse third-party trademarks or create a misleading impression of endorsement.",
+  },
+  {
+    title: "Data access and prohibited conduct",
+    body:
+      "Users may not use StreamTip for unauthorized scraping, automation, credential abuse, payment fraud, deceptive fundraising, or any attempt to bypass platform restrictions or safety systems. StreamTip may suspend or terminate access where necessary to protect creators, supporters, payment providers, or third-party platforms.",
+  },
 ]
 
 export default function TermsPage() {
@@ -60,6 +80,9 @@ export default function TermsPage() {
           <p className="mt-6 text-white/70 leading-8">
             These terms describe the basic operating rules for StreamTip. By registering, logging in, or using the platform, creators agree to these terms, including the platform fee structure described below.
           </p>
+          <p className="mt-4 text-sm leading-7 text-white/50">
+            StreamTip is not affiliated with TikTok or ByteDance. Users are responsible for following all applicable third-party platform rules when using StreamTip alongside livestream services.
+          </p>
         </div>
 
         <div className="space-y-5">
@@ -81,6 +104,14 @@ export default function TermsPage() {
               Important commercial term: StreamTip retains 20% of creator earnings as the platform fee. If you do not agree with this fee structure, do not register or continue using the service.
             </p>
           </div>
+        </div>
+
+        <div className="rounded-[28px] border border-white/10 bg-white/5 p-6 text-sm leading-7 text-white/65 backdrop-blur-xl">
+          For privacy information and additional disclosures about third-party services, please review the{" "}
+          <Link href="/privacy" className="text-purple-300 hover:text-purple-200">
+            Privacy Policy
+          </Link>
+          .
         </div>
       </div>
     </div>
